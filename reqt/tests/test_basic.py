@@ -3,7 +3,7 @@
 
 import pytest
 
-from requestor.core import Requestor
+import reqt
 
 
 async def custom(response):
@@ -13,4 +13,4 @@ async def custom(response):
 @pytest.mark.asyncio
 async def test_async_requestor():
     urls = ["https://www.google.com"]
-    await Requestor(urls=urls, method=custom).fetch_all()
+    await reqt.fetch_all(urls=urls, method=custom)

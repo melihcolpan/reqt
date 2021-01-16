@@ -6,10 +6,11 @@ import logging
 import socket
 
 from aiohttp import ClientConnectorError, ClientSession, TCPConnector
+
 from .helpers import get_request_method
 
 
-class Requestor:
+class Reqt:
     def __init__(
         self, urls, method, headers=None, request_type="GET", semaphore_limit=500
     ):
@@ -45,3 +46,17 @@ class Requestor:
                 for url in self.urls
             ]
             [await task for task in asyncio.as_completed(tasks)]
+
+
+async def fetch_all(
+    urls, method, headers=None, request_type="GET", semaphore_limit=500
+):
+    reqt = Reqt(
+        urls=urls,
+        method=method,
+        headers=headers,
+        request_type=request_type,
+        semaphore_limit=semaphore_limit,
+    )
+
+    await reqt.fetch_all()
