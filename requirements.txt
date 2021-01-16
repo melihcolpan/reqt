@@ -1,0 +1,2 @@
+aiohttp~=3.7.3
+pytest~=6.2.1
