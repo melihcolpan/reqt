@@ -23,7 +23,7 @@ Requests allows you to send HTTP/1.1 requests extremely easily. Just give `url a
 
 [![Version](https://img.shields.io/badge/reqt-v1.0.3-green)](https://pypi.org/project/reqt)
 
-## Installing Requests and Supported Versions
+## Installing Reqt and Supported Versions
 
 Reqt is available on PyPI:
 

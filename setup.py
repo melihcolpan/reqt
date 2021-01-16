@@ -12,7 +12,7 @@ with open('LICENSE') as f:
 
 setup(
     name='reqt',
-    version='1.0.2',
+    version='1.0.3',
     description='Reqt Package',
     long_description=readme,
     author='Melih Colpan',
