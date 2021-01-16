@@ -4,18 +4,18 @@
 from setuptools import setup, find_packages
 
 
-with open('reqt/docs/index.rst') as f:
+with open('README.md') as f:
     readme = f.read()
-    print(readme)
 
 with open('LICENSE') as f:
     license = f.read()
 
 setup(
     name='reqt',
-    version='1.0.2',
+    version='1.0.3',
     description='Reqt Package',
     long_description=readme,
+    long_description_content_type='text/markdown',
     author='Melih Colpan',
     author_email='melihcolpan1@gmail.com',
     url='https://github.com/melihcolpan/reqt',
