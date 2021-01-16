@@ -4,7 +4,7 @@
 from setuptools import setup, find_packages
 
 
-with open('README.md') as f:
+with open('reqt/docs/index.rst') as f:
     readme = f.read()
 
 with open('LICENSE') as f:
