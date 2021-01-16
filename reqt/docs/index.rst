@@ -1,37 +1,3 @@
-reqt
-====
+reqt is a simple, HTTP request sender library.
 
-**reqt** is a simple, asynchronous library that you can use to send
-``large numbers`` of requests.
-
-
-Description
-----------------
-
-Requests allows you to send HTTP/1.1 requests extremely easily.
-Just give `url addresses` and process your results. It continues
-to be developed with `new features` every day! ::
-
-    import asyncio
-    import reqt
-
-    async def custom_method(response):
-        print(f"Status Code: {response.status}")
-        print(f"Response: {response.content}")
-
-    async def main():
-        urls = ["https://www.google.com"]
-        await reqt.fetch_all(urls=urls, method=custom_method)
-
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
-
-Installing Reqt and Supported Versions
-------------------------------------------
-
-Reqt is available on PyPI:
-
-    $ python -m pip install reqt
-
-
-Reqt officially supports Python 3+.
+Check: https://github.com/melihcolpan/reqt

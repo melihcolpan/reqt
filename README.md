@@ -19,9 +19,10 @@ loop.run_until_complete(main())
 
 ```
 
+
 Requests allows you to send HTTP/1.1 requests extremely easily. Just give `url addresses` and process your results. It continues to be developed with `new features` every day!
 
-[![Version](https://img.shields.io/badge/reqt-v1.0.3-green)](https://pypi.org/project/reqt)
+[![Version](https://img.shields.io/badge/reqt-v1.0.2-green)](https://pypi.org/project/reqt)
 
 ## Installing Reqt and Supported Versions
 
