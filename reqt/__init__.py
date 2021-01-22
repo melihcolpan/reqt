@@ -7,27 +7,27 @@ import socket
 
 from aiohttp import ClientConnectorError, ClientSession, TCPConnector
 
-from .helpers import get_request_method
+from helpers import get_request_method
 
 
 class Reqt:
     def __init__(
-        self, urls, method, headers=None, request_type="GET", semaphore_limit=500
+        self, urls, func, headers=None, method="GET", semaphore_limit=500
     ):
         self.urls = urls
-        self.method = method
+        self.func = func
         self.headers = headers
-        self.request_type = request_type
+        self.method = method
         self.semaphore_limit = semaphore_limit
 
     async def fetch(self, session, url):
-        request_method = get_request_method(session, self.request_type)
+        request_method = get_request_method(session, self.method)
 
         try:
             async with request_method(url, headers=self.headers) as response:
-                await self.method(response) if asyncio.iscoroutinefunction(
-                    self.method
-                ) else self.method(response)
+                await self.func(response) if asyncio.iscoroutinefunction(
+                    self.func
+                ) else self.func(response)
 
         except ClientConnectorError as e:
             logging.exception(e)
@@ -49,13 +49,13 @@ class Reqt:
 
 
 async def fetch_all(
-    urls, method, headers=None, request_type="GET", semaphore_limit=500
+    urls, func, headers=None, method="GET", semaphore_limit=500
 ):
     reqt = Reqt(
         urls=urls,
-        method=method,
+        func=func,
         headers=headers,
-        request_type=request_type,
+        method=method,
         semaphore_limit=semaphore_limit,
     )
 

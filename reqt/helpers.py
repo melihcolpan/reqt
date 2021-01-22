@@ -13,4 +13,4 @@ def get_request_method(session: ClientSession, method: str):
         "HEAD": session.head,
         "OPTIONS": session.options,
         "PATCH": session.patch,
-    }.get(method.upper())
+    }.get(method.upper(), session.get)
