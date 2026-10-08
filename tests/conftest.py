@@ -52,9 +52,102 @@ def make_app() -> web.Application:
         """Returns the `body` query parameter as is, with a JSON content type."""
         return web.Response(text=request.query["body"], content_type="application/json")
 
+    items = [{"id": number, "name": f"item {number}"} for number in range(1, 8)]
+
+    def page_slice(page: int) -> list:
+        return items[(page - 1) * 3 : page * 3]
+
+    async def pages_next(request: web.Request) -> web.Response:
+        """Seven items, three per page, with a relative "links.next" URL."""
+        page = int(request.query.get("page", "1"))
+        rest = page * 3 < len(items)
+        links = {"next": f"/pages/next?page={page + 1}" if rest else None}
+        return web.json_response({"items": page_slice(page), "links": links})
+
+    async def pages_link(request: web.Request) -> web.Response:
+        page = int(request.query.get("page", "1"))
+        headers = {}
+        if page * 3 < len(items):
+            headers["Link"] = (
+                f'<{request.url.with_query(page=page + 1)}>; rel="next", <{request.url}>; rel="self"'
+            )
+        return web.json_response({"items": page_slice(page)}, headers=headers)
+
+    async def pages_cursor(request: web.Request) -> web.Response:
+        start = int(request.query.get("after", "0"))
+        chunk = items[start : start + 3]
+        cursor = str(start + 3) if start + 3 < len(items) else None
+        return web.json_response({"items": chunk, "meta": {"next_cursor": cursor}})
+
+    async def pages_number(request: web.Request) -> web.Response:
+        return web.json_response({"items": page_slice(int(request.query.get("page", "1")))})
+
+    async def pages_loop(request: web.Request) -> web.Response:
+        """Always has a next page; with ?same=1 the next page is this page again."""
+        if "same" in request.query:
+            return web.json_response({"next": str(request.rel_url)})
+        return web.json_response({"next": f"/pages/loop?n={int(request.query.get('n', '0')) + 1}"})
+
+    limited: collections.Counter = collections.Counter()
+
+    async def limited_route(request: web.Request) -> web.Response:
+        """429 with Retry-After for the first `fail` requests of `key`, then 200."""
+        key = request.query["key"]
+        limited[key] += 1
+        if limited[key] <= int(request.query.get("fail", "1")):
+            return web.Response(status=429, headers={"Retry-After": request.query.get("retry_after", "0.2")})
+        return web.Response(text="ok", headers={"X-RateLimit-Remaining": "100", "X-RateLimit-Reset": "1"})
+
+    tokens = {"valid": "token-1"}
+    refreshes: collections.Counter = collections.Counter()
+
+    async def protected(request: web.Request) -> web.Response:
+        if request.headers.get("Authorization") != f"Bearer {tokens['valid']}":
+            return web.Response(status=401, text="expired")
+        return web.Response(text="secret")
+
+    async def rotate(request: web.Request) -> web.Response:
+        """Expire the current token; the next valid one is token-<n+1>."""
+        number = int(tokens["valid"].split("-")[1]) + 1
+        tokens["valid"] = f"token-{number}"
+        refreshes["rotations"] += 1
+        return web.Response(text=tokens["valid"])
+
+    etag_hits: collections.Counter = collections.Counter()
+
+    async def etag(request: web.Request) -> web.Response:
+        key = request.query.get("key", "default")
+        version = request.query.get("version", "1")
+        tag = f'"v{version}"'
+        if request.headers.get("If-None-Match") == tag:
+            etag_hits[f"{key}:304"] += 1
+            return web.Response(status=304, headers={"ETag": tag})
+        etag_hits[f"{key}:200"] += 1
+        return web.json_response({"version": version}, headers={"ETag": tag})
+
+    async def counts(request: web.Request) -> web.Response:
+        return web.json_response({**etag_hits, **refreshes})
+
+    async def proxy_check(request: web.Request) -> web.Response:
+        """Used as a stand-in proxy: reports the Host the client asked for and the port it reached."""
+        return web.json_response(
+            {"host": request.host, "port": request.transport.get_extra_info("sockname")[1]}
+        )
+
     app = web.Application()
     app.add_routes(
         [
+            web.get("/pages/next", pages_next),
+            web.get("/pages/link", pages_link),
+            web.get("/pages/cursor", pages_cursor),
+            web.get("/pages/number", pages_number),
+            web.get("/pages/loop", pages_loop),
+            web.get("/limited", limited_route),
+            web.get("/protected", protected),
+            web.post("/rotate", rotate),
+            web.get("/etag", etag),
+            web.get("/counts", counts),
+            web.get("/proxy-check", proxy_check),
             web.get("/json", raw_json),
             web.get("/ok", ok),
             web.route("*", "/echo", echo),

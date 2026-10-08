@@ -133,10 +133,30 @@ async def check(connection, dialect, server):
         await reqstorm.fetch_to_db(urls, connection, table="plain", schema=SCHEMA, explode="items")
 
 
+async def check_paginated_model(connection, server):
+    """A paginated API written through a Pydantic model; a second run updates rows in place."""
+    pydantic = pytest.importorskip("pydantic")
+
+    class Item(pydantic.BaseModel):
+        id: int = pydantic.Field(json_schema_extra={"key": True})
+        name: str
+
+    query(connection, "DROP TABLE IF EXISTS paged_items")
+    for _ in range(2):
+        summary = await reqstorm.fetch_to_db(
+            [server + "/pages/next"], connection, table="paged_items", schema=Item, explode="items",
+            paginate=reqstorm.NextLink("links.next"),
+        )  # fmt: skip
+        assert (summary.ok, summary.rows, summary.rejected) == (3, 7, 0)
+    rows = list(query(connection, "SELECT id, name, source_index FROM paged_items ORDER BY id"))
+    assert rows == [(number, f"item {number}", 0) for number in range(1, 8)]
+
+
 async def test_sqlite(server, tmp_path):
     connection = sqlite3.connect(tmp_path / "shop.db")
     try:
         await check(connection, "sqlite", server)
+        await check_paginated_model(connection, server)
     finally:
         connection.close()
 
@@ -169,6 +189,7 @@ async def test_postgresql(server):
     connection = psycopg.connect(os.environ["REQSTORM_TEST_POSTGRES"])
     try:
         await check(connection, "postgresql", server)
+        await check_paginated_model(connection, server)
     finally:
         connection.close()
 
@@ -182,5 +203,6 @@ async def test_mysql(server):
     )
     try:
         await check(connection, "mysql", server)
+        await check_paginated_model(connection, server)
     finally:
         connection.close()
