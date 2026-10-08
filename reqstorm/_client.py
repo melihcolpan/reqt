@@ -487,8 +487,10 @@ async def fetch_all(
     Args:
         urls: URLs, or ``Request`` objects for per-request method, headers, body or params.
         method: HTTP method for plain URLs (default ``"GET"``).
-        headers, params, json, data: Defaults applied to every request; a ``Request``'s
-            own headers are merged on top, its other fields replace the default.
+        headers: Headers sent with every request; a ``Request``'s own headers are merged on top.
+        params: Query parameters for every request, unless a ``Request`` sets its own.
+        json: JSON body for every request, unless a ``Request`` sets its own.
+        data: Form or raw body for every request, unless a ``Request`` sets its own.
         concurrency: Maximum number of requests in flight at once.
         timeout: Seconds allowed per attempt, including reading the body. ``None`` disables it.
         retries: How many times to retry a request right away after a connection error,

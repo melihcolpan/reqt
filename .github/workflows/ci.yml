@@ -77,6 +77,17 @@ jobs:
       - run: ruff format --check .
       - run: mypy reqstorm
 
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.13"
+      - run: python -m pip install -e . -r docs/requirements.txt
+      - run: mkdocs build --strict
+
   package:
     name: Build package
     runs-on: ubuntu-latest
