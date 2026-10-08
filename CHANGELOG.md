@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.1.0
+
+### Added
+- **Structured data:** write the fields of JSON responses to typed columns. Pass `schema=` to `fetch_to_db` or `fetch_to_file`, a dict of column name to `reqstorm.Field(path, type, required=, coerce=, key=)`.
+  - Types `int`, `float`, `str`, `bool`, `"datetime"` and `"json"` map to `BIGINT`, `DOUBLE PRECISION`, `TEXT`, `BOOLEAN`, `TIMESTAMPTZ` and `JSONB` in PostgreSQL, and to their MySQL and SQLite equivalents.
+  - Values are checked strictly; NaN and Infinity are always rejected. `coerce=True` accepts compatible values such as `"12.5"` for a float.
+  - Nested values are read with dotted paths (`"pricing.amount"`, `"tags.0"`). `explode="items"` turns each array element into a row, and `"$."` paths read from the response root.
+  - Rejected records are never written. They are listed in `Summary.errors` with their reasons, and with `rejects_table` also stored in a table.
+  - `key=True` fields form the primary key, and writing an existing key updates the row.
+  - Rows carry `source_index`, `source_method` and `source_url`, which makes `resume=True` work.
+- `reqstorm.extract(results, schema)` returns typed rows and rejected records from `fetch_all` results.
+- `reqstorm.infer_schema(samples)` drafts a schema from sample responses; `print()` shows it as Python code.
+- `Summary.rows` and `Summary.rejected`.
+
 ## 2.0.1
 
 First release as **reqstorm**. reqt is renamed because another project already uses the reqt name.

@@ -15,6 +15,14 @@
 ::: reqstorm.fetch_to_db_sync
 ::: reqstorm.Summary
 
+## Structured data
+
+::: reqstorm.Field
+::: reqstorm.Schema
+::: reqstorm.infer_schema
+::: reqstorm.extract
+::: reqstorm.SchemaError
+
 ## Requests and results
 
 ::: reqstorm.Request

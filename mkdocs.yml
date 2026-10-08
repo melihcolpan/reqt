@@ -54,6 +54,7 @@ nav:
       - Timeouts and retries: guide/retries.md
       - Writing to files: guide/files.md
       - Writing to databases: guide/databases.md
+      - Structured data: guide/structured-data.md
       - Requests, streaming and TLS: guide/requests.md
   - Coming from reqt: coming-from-reqt.md
   - API reference: api.md
