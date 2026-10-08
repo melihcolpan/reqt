@@ -64,7 +64,8 @@ def make_app() -> web.Application:
 
 
 async def _serve(ssl_context=None):
-    runner = web.AppRunner(make_app())
+    # Cancel a handler when its client disconnects, so slow handlers do not delay shutdown
+    runner = web.AppRunner(make_app(), handler_cancellation=True)
     await runner.setup()
     site = web.TCPSite(runner, "127.0.0.1", 0, ssl_context=ssl_context)
     await site.start()
@@ -98,3 +99,35 @@ def trusted_context(certificate_authority):
     context = ssl.create_default_context()
     certificate_authority.configure_trust(context)
     return context
+
+
+@pytest_asyncio.fixture
+async def second_server():
+    runner, port = await _serve()
+    yield f"http://127.0.0.1:{port}"
+    await runner.cleanup()
+
+
+@pytest.fixture
+def thread_server():
+    """A server on its own event loop in a background thread, for the blocking API."""
+    import threading
+
+    loop = asyncio.new_event_loop()
+    ready = threading.Event()
+    state = {}
+
+    def run():
+        asyncio.set_event_loop(loop)
+        state["runner"], state["port"] = loop.run_until_complete(_serve())
+        ready.set()
+        loop.run_forever()
+
+    thread = threading.Thread(target=run, daemon=True)
+    thread.start()
+    ready.wait(5)
+    yield f"http://127.0.0.1:{state['port']}"
+    asyncio.run_coroutine_threadsafe(state["runner"].cleanup(), loop).result(5)
+    loop.call_soon_threadsafe(loop.stop)
+    thread.join(5)
+    loop.close()
