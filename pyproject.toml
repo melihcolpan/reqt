@@ -60,6 +60,8 @@ filterwarnings = [
 [tool.ruff]
 line-length = 110
 target-version = "py39"
+# Code samples in the docs and README are aligned by hand for reading
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
