@@ -106,15 +106,14 @@ def test_estimate():
         reqstorm.estimate(-1)
 
 
-async def test_progress_shows_eta(server):
+async def test_progress_shows_eta():
     import io
 
-    from reqstorm._progress import Progress
+    from reqstorm._client import Request, Result
+    from reqstorm._observe import Run
 
     output = io.StringIO()
-    tracker = Progress(output, total=10)
-    results = await reqstorm.fetch_all([f"{server}/ok"] * 2)
-    for result in results:
-        tracker._last_print = 0
-        tracker.update(result)
-    assert "ETA" in output.getvalue()
+    run = Run(total=10, progress=output)
+    for index in range(6):
+        run.completed(Result(Request("https://api.example.com/"), index=index, status=200))
+    assert "ETA" in str(run.snapshot()) and "6/10 (60%)" in str(run.snapshot())

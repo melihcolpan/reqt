@@ -6,9 +6,11 @@ import asyncio
 import time
 from dataclasses import dataclass
 from email.utils import parsedate_to_datetime
-from typing import Dict, Mapping, Optional
+from typing import Dict, Mapping, Optional, Tuple
 
 from ._limits import host_key
+
+__all__ = ["AdaptiveRateLimiter", "seconds_until_reset"]
 
 # Header names, most specific first. "RateLimit-*" is the IETF draft; "X-RateLimit-*" is the
 # common convention (GitHub, Twitter/X, many others).
@@ -91,17 +93,28 @@ class AdaptiveRateLimiter:
         if slot > now:
             await asyncio.sleep(slot - now)
 
-    def record(self, url: str, status: Optional[int], headers: Mapping[str, str]) -> None:
+    def paused(self) -> Dict[str, float]:
+        """Hosts that are paused right now, with the seconds left."""
+        now = time.monotonic()
+        return {
+            host: state.paused_until - now for host, state in self._hosts.items() if state.paused_until > now
+        }
+
+    def record(
+        self, url: str, status: Optional[int], headers: Mapping[str, str]
+    ) -> Optional[Tuple[float, str]]:
+        """Learn from a response. Returns ``(seconds, reason)`` when the host is paused."""
         state = self._state(url)
         if state is None or status is None:
-            return
+            return None
         now = time.monotonic()
         reset = seconds_until_reset(headers)
         if status == 429:
             state.interval = min(max(state.interval * 2, 0.1), 60.0)
             pause = reset if reset is not None else max(state.interval, 1.0)
             state.paused_until = max(state.paused_until, now + pause)
-            return
+            source = "Retry-After" if reset is not None else "no Retry-After"
+            return pause, f"429 Too Many Requests ({source}), spacing requests {state.interval:.2f}s apart"
         remaining_text = _header(headers, _REMAINING)
         if remaining_text is not None and reset is not None:
             try:
@@ -111,8 +124,9 @@ class AdaptiveRateLimiter:
             if remaining is not None:
                 if remaining <= 0:
                     state.paused_until = max(state.paused_until, now + reset)
-                else:
-                    state.interval = min(reset / remaining, 60.0)
-                return
+                    return (reset, "rate limit used up until the window resets") if reset > 0 else None
+                state.interval = min(reset / remaining, 60.0)
+                return None
         if 200 <= status < 400 and state.interval:
             state.interval = state.interval * 0.9 if state.interval > 0.01 else 0.0
+        return None

@@ -91,6 +91,8 @@ def _parser() -> argparse.ArgumentParser:
     )
 
     output = parser.add_argument_group("output")
+    output.add_argument("--flush-interval", type=float, default=1.0, metavar="SECONDS",
+                        help="write waiting results to --output at least this often (default 1)")  # fmt: skip
     output.add_argument(
         "--resume", action="store_true", help="skip requests already saved successfully in --output"
     )
@@ -108,7 +110,13 @@ def _parser() -> argparse.ArgumentParser:
     info = parser.add_argument_group("information")
     info.add_argument("--estimate", action="store_true", help="print how long the batch would take and exit")
     info.add_argument("--latency", type=float, default=0.5, help="typical response time for --estimate")
-    info.add_argument("-q", "--quiet", action="store_true", help="no progress line")
+    info.add_argument("-q", "--quiet", action="store_true", help="no progress line; log only errors")
+    info.add_argument("-v", "--verbose", action="count", default=0,
+                      help="log more: -v run events (INFO), -vv every attempt (DEBUG)")  # fmt: skip
+    info.add_argument("--log-file", metavar="PATH",
+                      help="write the log to a file instead of stderr; a directory or a name with {time} "
+                      "gets a time-stamped file, and an existing file is never overwritten")  # fmt: skip
+    info.add_argument("--log-json", action="store_true", help="log one JSON object per line")
     info.add_argument(
         "--report", action="store_true", help="print response times, statuses and hosts at the end"
     )
@@ -293,17 +301,23 @@ def _batch(args: argparse.Namespace, cache: Optional[Cache]) -> int:
         return 0
 
     progress: Any = False if args.quiet else True
+    options["total"] = _count(args) if not args.paginate else None
+    options["log_level"] = "ERROR" if args.quiet else ("WARNING", "INFO", "DEBUG")[min(args.verbose, 2)]
+    options["log_file"] = args.log_file
+    options["log_format"] = "json" if args.log_json else "text"
     if args.output:
         summary = fetch_to_file_sync(
             _inputs(args), args.output, body=args.body, include_headers=args.include_headers,
             resume=args.resume, ordered=args.ordered, progress=progress, retry_rounds=args.retry_rounds,
             retry_round_delay=args.retry_round_delay, table=args.table, schema=schema,
-            rejects_table=args.rejects_table, **options,
+            rejects_table=args.rejects_table, flush_interval=args.flush_interval, **options,
         )  # fmt: skip
         message = f"reqstorm: {summary.ok} ok, {summary.failed} failed, {summary.skipped} skipped"
         if schema is not None:
             message += f", {summary.rows} rows, {summary.rejected} rejected"
         print(message + f" -> {args.output}", file=sys.stderr)
+        if summary.log_file:
+            print(f"reqstorm: log written to {summary.log_file}", file=sys.stderr)
         if args.report:
             print(json.dumps(summary.report, indent=2), file=sys.stderr)
         return 0 if summary.failed == 0 and summary.rejected == 0 else 1
@@ -314,7 +328,7 @@ def _batch(args: argparse.Namespace, cache: Optional[Cache]) -> int:
 
     report = Report()
     failed = 0
-    for result in stream_sync(_inputs(args), **options):
+    for result in stream_sync(_inputs(args), progress=progress, **options):
         report.add(result)
         failed += 0 if result.ok else 1
         sys.stdout.write(json.dumps(result.to_dict(body=args.body, include_headers=args.include_headers),

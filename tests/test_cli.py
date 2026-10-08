@@ -119,3 +119,40 @@ def test_console_script_runs():
     output = subprocess.run([sys.executable, "-m", "reqstorm", "--version"], capture_output=True, text=True,
                             check=True)  # fmt: skip
     assert output.stdout.startswith("reqstorm 2.")
+
+
+def test_verbosity_levels(thread_server, tmp_path, capsys):
+    urls = tmp_path / "urls.txt"
+    urls.write_text(f"{thread_server}/ok\n{thread_server}/status/404\n")
+    main([str(urls), "-o", str(tmp_path / "a.jsonl")])
+    default = capsys.readouterr().err
+    assert "ERROR   reqstorm:" in default and "INFO" not in default
+    assert "2/2 (100%)" in default  # the total is counted from the file
+    main([str(urls), "-o", str(tmp_path / "b.jsonl"), "-vv"])
+    verbose = capsys.readouterr().err
+    assert "INFO    reqstorm: starting 2 requests" in verbose and "DEBUG   reqstorm: GET" in verbose
+    main([str(urls), "-q"])
+    quiet = capsys.readouterr()
+    assert "reqstorm: 2/2" not in quiet.err and "ERROR" in quiet.err and len(_lines(quiet.out)) == 2
+
+
+def test_log_file_directory_and_json(thread_server, tmp_path, capsys):
+    urls = tmp_path / "urls.txt"
+    urls.write_text(f"{thread_server}/ok\n")
+    logs = tmp_path / "logs"
+    for _ in range(2):
+        assert main([str(urls), "-o", str(tmp_path / "out.jsonl"), "-v", "--log-json", "--log-file",
+                     str(logs) + "/"]) == 0  # fmt: skip
+    files = sorted(logs.iterdir())
+    assert len(files) == 2  # one file per run, none overwritten
+    events = [json.loads(line)["event"] for line in files[0].read_text().splitlines()]
+    assert events == ["start", "finish"]
+    assert "log written to" in capsys.readouterr().err
+
+
+def test_progress_is_shown_when_writing_to_stdout(thread_server, tmp_path, capsys):
+    urls = tmp_path / "urls.txt"
+    urls.write_text(f"{thread_server}/ok\n")
+    assert main([str(urls), "--flush-interval", "0"]) == 0
+    captured = capsys.readouterr()
+    assert "1/1 (100%)" in captured.err and len(_lines(captured.out)) == 1

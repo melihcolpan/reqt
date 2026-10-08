@@ -33,8 +33,8 @@ import aiohttp
 from multidict import CIMultiDict, CIMultiDictProxy
 
 from ._adaptive import AdaptiveRateLimiter
-from ._limits import HostRateLimiter, RateLimit
-from ._progress import Progress, ProgressTarget
+from ._limits import HostRateLimiter, RateLimit, host_key
+from ._observe import LogLevel, LogTarget, ProgressTarget, Run, describe
 from ._socks import SocksSessions, check_available, is_socks
 
 __all__ = ["Attempt", "HTTPStatusError", "Request", "Result", "Results", "fetch_all", "stream"]
@@ -250,6 +250,7 @@ class _Options:
     socks: Optional[SocksSessions] = None
     max_backoff: float = 30.0
     jitter: bool = True
+    run: Optional[Run] = None
 
     def backoff_delay(self, retry: int) -> float:
         """Seconds to wait before retry number ``retry`` (1 for the first)."""
@@ -313,8 +314,11 @@ async def _send(session: aiohttp.ClientSession, request: Request, index: int, op
     if cache is not None:
         cache_key = cache.key(request.method or "GET", request.url, request.params, request.headers)
     cached = cache.get(cache_key) if cache_key else None
+    run = options.run
     if cached is not None and cache.is_fresh(cached):
         cache.hits += 1
+        if run is not None:
+            run.cached(request, revalidated=False)
         result.status, result.headers, result.body = cached.status, cached.headers, cached.body
         result.final_url, result.from_cache = cached.final_url, True
         result.elapsed = time.monotonic() - started
@@ -329,6 +333,7 @@ async def _send(session: aiohttp.ClientSession, request: Request, index: int, op
         result.attempts = attempt
         delay = 0.0
         attempt_started = time.monotonic()
+        used_proxy: Optional[str] = None
         try:
             headers: Dict[str, str] = dict(request.headers or {})
             generation = None
@@ -341,7 +346,7 @@ async def _send(session: aiohttp.ClientSession, request: Request, index: int, op
             if limiter is not None:
                 await limiter.wait(request.url)
             attempt_started = time.monotonic()
-            proxy = request.proxy or options.next_proxy()
+            proxy = used_proxy = request.proxy or options.next_proxy()
             sender = session
             if proxy is not None and is_socks(proxy):
                 if options.socks is None:
@@ -360,12 +365,19 @@ async def _send(session: aiohttp.ClientSession, request: Request, index: int, op
             ) as response:
                 body = await response.read()
                 status, response_headers, final_url = response.status, response.headers, str(response.url)
-            result.history.append(Attempt(attempt, status, None, time.monotonic() - attempt_started))
+            took = time.monotonic() - attempt_started
+            result.history.append(Attempt(attempt, status, None, took))
+            if run is not None:
+                run.attempted(request, status, None, took, attempt, used_proxy)
             if adaptive:
-                limiter.record(request.url, status, response_headers)
+                paused = limiter.record(request.url, status, response_headers)
+                if paused is not None and run is not None:
+                    run.throttled(host_key(request.url) or request.url, *paused)
             if status == 304 and cached is not None:
                 cache.touch(cache_key)
                 cache.revalidated += 1
+                if run is not None:
+                    run.cached(request, revalidated=True)
                 result.status, result.headers, result.body = cached.status, cached.headers, cached.body
                 result.final_url, result.from_cache, result.error = cached.final_url, True, None
                 break
@@ -373,7 +385,10 @@ async def _send(session: aiohttp.ClientSession, request: Request, index: int, op
             result.final_url, result.error = final_url, None
             if status == 401 and options.auth is not None and options.auth.can_refresh and not refreshed:
                 refreshed = True
+                before = options.auth.refreshes
                 await options.auth.refresh(generation)
+                if run is not None and options.auth.refreshes != before:
+                    run.token_refreshed(options.auth.refreshes)
                 continue
             if status == 429 and adaptive and throttled < MAX_THROTTLED_RETRIES:
                 throttled += 1  # the limiter now pauses this host; these retries are not counted
@@ -382,16 +397,24 @@ async def _send(session: aiohttp.ClientSession, request: Request, index: int, op
                 break
             retries_used += 1
             delay = _retry_after(response_headers) or options.backoff_delay(retries_used)
+            if run is not None:
+                run.retrying(request, f"HTTP {status}", attempt, options.retries + 1, delay, used_proxy)
         except asyncio.CancelledError:
             raise
         except Exception as error:  # one failing request must not stop the others
             result.error = error
             result.status = None
-            result.history.append(Attempt(attempt, None, error, time.monotonic() - attempt_started))
+            took = time.monotonic() - attempt_started
+            result.history.append(Attempt(attempt, None, error, took))
+            if run is not None:
+                run.attempted(request, None, error, took, attempt, used_proxy)
             if not _is_retryable_error(error) or retries_used >= options.retries:
                 break
             retries_used += 1
             delay = options.backoff_delay(retries_used)
+            if run is not None:
+                reason = f"{type(error).__name__}: {error}".rstrip(": ")
+                run.retrying(request, reason, attempt, options.retries + 1, delay, used_proxy)
         if delay:
             await asyncio.sleep(delay)
     if cache_key and result.ok and result.status == 200 and not result.from_cache:
@@ -423,7 +446,13 @@ async def stream(
     cache: Any = None,
     proxy: Union[str, Sequence[str], None] = None,
     paginate: Any = None,
+    progress: ProgressTarget = False,
+    total: Optional[int] = None,
+    log_level: LogLevel = None,
+    log_file: LogTarget = None,
+    log_format: str = "text",
     session: Optional[aiohttp.ClientSession] = None,
+    _run: Optional[Run] = None,
 ) -> AsyncGenerator[Result, None]:
     """Send the requests concurrently and yield each ``Result`` as soon as it completes.
 
@@ -432,6 +461,9 @@ async def stream(
     See ``fetch_all`` for the parameters. Retry rounds are not available here;
     use ``fetch_all`` or ``fetch_to_file`` for those.
     """
+    owns_run = _run is None
+    run = _run or Run(total=_total(urls, total, paginate), progress=progress, log_level=log_level,
+                      log_file=log_file, log_format=log_format)  # fmt: skip
     if concurrency < 1:
         raise ValueError("concurrency must be at least 1")
     if retries < 0:
@@ -469,7 +501,12 @@ async def stream(
         cache=cache,
         proxies=itertools.cycle(proxies) if proxies else None,
         socks=SocksSessions(concurrency, concurrency_per_host) if session is None else None,
+        run=run,
     )
+    if limiter is not None:
+        run.limiters.append(limiter)
+    if owns_run:
+        run.start(describe(concurrency=concurrency, rate_limit=rate_limit, retries=retries))
 
     owns_session = session is None
     if session is None:
@@ -518,6 +555,7 @@ async def stream(
                 return
             request, seed, page, index = task
             next_request = None
+            run.started_request()
             try:
                 result = await _send(session, request, index, options)
                 result.seed_index, result.page = seed, page
@@ -531,6 +569,7 @@ async def stream(
                         follow_ups.append((next_request, seed, page + 1))
                     state["in_flight"] -= 1
                     changed.notify_all()
+                run.finished_request()
             await queue.put(result)
 
     async def supervise() -> None:
@@ -549,6 +588,8 @@ async def stream(
                 break
             if isinstance(item, BaseException):
                 raise item
+            if owns_run:
+                run.completed(item)
             yield item
     finally:
         supervisor.cancel()
@@ -560,6 +601,8 @@ async def stream(
             await session.close()
         if options.socks is not None:
             await options.socks.close()
+        if owns_run:
+            await run.finish()
 
 
 async def _execute(
@@ -581,16 +624,19 @@ async def _execute(
             "pagination. Use retries= to retry pages right away."
         )
     retry_statuses = frozenset(stream_options.get("retry_statuses", DEFAULT_RETRY_STATUSES))
+    run: Run = stream_options["_run"]
     deferred: List[Result] = []
     async for result in stream(urls, **stream_options):
         if retry_rounds and _should_retry(result, retry_statuses):
             deferred.append(result)
         else:
+            run.completed(result)
             yield result
 
     for round_number in range(1, retry_rounds + 1):
         if not deferred:
             break
+        run.retry_round(round_number, retry_rounds, len(deferred), retry_round_delay)
         await asyncio.sleep(retry_round_delay)
         previous = deferred
         deferred = []
@@ -607,6 +653,7 @@ async def _execute(
             if round_number < retry_rounds and _should_retry(retried, retry_statuses):
                 deferred.append(retried)
             else:
+                run.completed(retried)
                 yield retried
 
 
@@ -638,6 +685,10 @@ async def fetch_all(
     paginate: Any = ...,
     callback: Optional[Callback] = ...,
     progress: ProgressTarget = ...,
+    total: Optional[int] = ...,
+    log_level: LogLevel = ...,
+    log_file: LogTarget = ...,
+    log_format: str = ...,
     session: Optional[aiohttp.ClientSession] = ...,
 ) -> Results: ...
 
@@ -681,6 +732,10 @@ async def fetch_all(
     paginate: Any = None,
     callback: Optional[Callback] = None,
     progress: ProgressTarget = False,
+    total: Optional[int] = None,
+    log_level: LogLevel = None,
+    log_file: LogTarget = None,
+    log_format: str = "text",
     session: Optional[aiohttp.ClientSession] = None,
     **legacy: Any,
 ) -> Optional[Results]:
@@ -728,7 +783,21 @@ async def fetch_all(
             starting URL is followed through its pages. Results carry ``page`` and
             ``seed_index``. Cannot be combined with ``retry_rounds``.
         callback: Called with each final ``Result`` as soon as it is known. May be a coroutine function.
-        progress: ``True`` to print progress to stderr, or a text stream to print it to.
+        progress: ``True`` prints a progress line to stderr every few seconds, even while
+            no request finishes: done/total, ok, failed, requests in flight, retries,
+            the rate over the last minute, paused hosts and the time left. A text stream
+            prints it there instead; a function receives a ``reqstorm.ProgressInfo``.
+        total: Number of requests, for the percentage and the time left when ``urls`` is a
+            generator (a list is counted automatically). Ignored with ``paginate``, where the
+            number of pages is not known in advance.
+        log_level: ``"DEBUG"``, ``"INFO"``, ``"WARNING"`` or ``"ERROR"`` to log this run on its
+            own, whatever the application's logging configuration: to stderr, or to
+            ``log_file``. Leave it out to log through the standard ``"reqstorm"`` logger,
+            which follows the application's configuration. See the logging guide.
+        log_file: With ``log_level``: a file name, a name containing ``{time}``, or a
+            directory for time-stamped files. An existing file is never overwritten:
+            ``run.log`` becomes ``run-2.log``. A text stream also works.
+        log_format: ``"text"`` (default) or ``"json"``, one object per line.
         session: An existing ``aiohttp.ClientSession`` to use instead of creating one.
 
     Returns a ``Results`` list; ``results.errors()`` and ``results.summary()`` report the failures.
@@ -742,7 +811,8 @@ async def fetch_all(
         return None
 
     results = Results()
-    tracker = Progress.create(progress, total=_length(urls))
+    run = Run(total=_total(urls, total, paginate), progress=progress, log_level=log_level, log_file=log_file,
+              log_format=log_format)  # fmt: skip
     stream_options: Dict[str, Any] = dict(
         method=method,
         headers=headers,
@@ -765,19 +835,27 @@ async def fetch_all(
         proxy=proxy,
         paginate=paginate,
         session=session,
+        _run=run,
     )
-    async for result in _execute(urls, retry_rounds, retry_round_delay, stream_options):
-        results.append(result)
-        if tracker is not None:
-            tracker.update(result)
-        if callback is not None:
-            outcome = callback(result)
-            if asyncio.iscoroutine(outcome):
-                await outcome
-    if tracker is not None:
-        tracker.close()
+    run.start(describe(concurrency=concurrency, rate_limit=rate_limit, retries=retries,
+                       retry_rounds=retry_rounds))  # fmt: skip
+    try:
+        async for result in _execute(urls, retry_rounds, retry_round_delay, stream_options):
+            results.append(result)
+            if callback is not None:
+                outcome = callback(result)
+                if asyncio.iscoroutine(outcome):
+                    await outcome
+    finally:
+        await run.finish()
     results.sort(key=lambda r: r.index)
     return results
+
+
+def _total(urls: Iterable[Any], total: Optional[int], paginate: Any) -> Optional[int]:
+    if paginate is not None:
+        return None
+    return total if total is not None else _length(urls)
 
 
 def _length(urls: Iterable[Any]) -> Optional[int]:
