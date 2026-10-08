@@ -48,9 +48,14 @@ def make_app() -> web.Application:
     async def latin1(request: web.Request) -> web.Response:
         return web.Response(body="café".encode("latin-1"), content_type="text/plain", charset="latin-1")
 
+    async def raw_json(request: web.Request) -> web.Response:
+        """Returns the `body` query parameter as is, with a JSON content type."""
+        return web.Response(text=request.query["body"], content_type="application/json")
+
     app = web.Application()
     app.add_routes(
         [
+            web.get("/json", raw_json),
             web.get("/ok", ok),
             web.route("*", "/echo", echo),
             web.get("/status/{code}", status),

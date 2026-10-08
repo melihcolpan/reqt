@@ -62,7 +62,7 @@ jobs:
         with:
           python-version: "3.13"
       - run: python -m pip install -e ".[test]" "psycopg[binary]" pymysql
-      - run: python -m pytest -q tests/test_ordered_and_db.py -rs
+      - run: python -m pytest -q tests/test_ordered_and_db.py tests/test_schema_db.py -rs
 
   lint:
     name: Lint and types
