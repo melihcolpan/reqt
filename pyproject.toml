@@ -30,7 +30,7 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8", "pytest-asyncio>=0.23", "trustme>=1.1"]
+test = ["pytest>=9.1.1", "pytest-asyncio>=0.23", "trustme>=1.1"]
 lint = ["ruff>=0.6", "mypy>=1.10"]
 
 [project.urls]
