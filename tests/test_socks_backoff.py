@@ -142,3 +142,23 @@ async def test_max_backoff_limits_the_real_wait(server):
 async def test_negative_backoff_is_rejected(server):
     with pytest.raises(ValueError, match="backoff"):
         await reqstorm.fetch_all([server + "/ok"], max_backoff=-1)
+
+
+async def test_unreachable_socks_proxy_is_retried_with_the_next_one(server, socks_proxy):
+    dead = "socks5://127.0.0.1:9"
+    results = await reqstorm.fetch_all(
+        [server + "/ok"], proxy=[dead, socks_proxy.url()], retries=1, backoff=0
+    )
+    assert results[0].text() == "ok" and results[0].attempts == 2
+    assert results[0].history[0].error is not None and len(socks_proxy.requests) == 1
+
+
+async def test_proxy_failures_count_as_retryable_errors():
+    import aiohttp_socks
+    import python_socks
+
+    from reqstorm._client import _is_retryable_error
+
+    for package in (aiohttp_socks, python_socks):
+        for name in ("ProxyError", "ProxyConnectionError", "ProxyTimeoutError"):
+            assert _is_retryable_error(getattr(package, name)("x")), (package.__name__, name)

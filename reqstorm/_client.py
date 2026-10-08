@@ -35,7 +35,7 @@ from multidict import CIMultiDict, CIMultiDictProxy
 from ._adaptive import AdaptiveRateLimiter
 from ._limits import HostRateLimiter, RateLimit, host_key
 from ._observe import LogLevel, LogTarget, ProgressTarget, Run, describe
-from ._socks import SocksSessions, check_available, is_socks
+from ._socks import SocksSessions, check_available, is_proxy_error, is_socks
 
 __all__ = ["Attempt", "HTTPStatusError", "Request", "Result", "Results", "fetch_all", "stream"]
 
@@ -284,7 +284,7 @@ def _resolve(request: Union[str, Request], options: _Options) -> Request:
 def _is_retryable_error(error: BaseException) -> bool:
     if isinstance(error, (aiohttp.InvalidURL, ValueError)):
         return False
-    return isinstance(error, (aiohttp.ClientError, asyncio.TimeoutError))
+    return isinstance(error, (aiohttp.ClientError, asyncio.TimeoutError)) or is_proxy_error(error)
 
 
 def _should_retry(result: Result, retry_statuses: frozenset) -> bool:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import unquote, urlsplit
 
@@ -13,6 +14,24 @@ _MISSING = "SOCKS proxies need the aiohttp-socks package: pip install 'reqstorm[
 
 def is_socks(proxy: Optional[str]) -> bool:
     return proxy is not None and urlsplit(proxy).scheme.lower() in SCHEMES
+
+
+def is_proxy_error(error: BaseException) -> bool:
+    """A failure of a SOCKS proxy: unreachable, refused, timed out or a bad reply.
+
+    These are worth retrying: the next attempt may use another proxy from the pool, or the
+    proxy may be back.
+    """
+    kinds: Tuple[type, ...] = ()
+    # aiohttp-socks raises its own classes; python-socks has classes of the same names
+    for module in ("aiohttp_socks", "python_socks"):
+        try:
+            package = importlib.import_module(module)
+        except ImportError:
+            continue
+        names = ("ProxyError", "ProxyConnectionError", "ProxyTimeoutError")
+        kinds += tuple(getattr(package, name) for name in names if hasattr(package, name))
+    return bool(kinds) and isinstance(error, kinds)
 
 
 def check_available() -> None:
