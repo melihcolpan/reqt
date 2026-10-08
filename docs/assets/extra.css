@@ -13,7 +13,7 @@
 
 /* Home page */
 .rs-hero { padding: 1.5rem 0 0.5rem; }
-.rs-hero h1 { font-size: 2.6rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.4rem; color: var(--md-default-fg-color); }
-.rs-hero p.rs-tagline { font-size: 1.15rem; max-width: 40rem; color: var(--md-default-fg-color--light); }
+.md-typeset .rs-hero h1 { font-size: 2.6rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.4rem; color: var(--md-default-fg-color); }
+.md-typeset .rs-hero p.rs-tagline { font-size: 1.15rem; max-width: 40rem; color: var(--md-default-fg-color--light); }
 .rs-hero .md-button { margin: 0.4rem 0.4rem 0.4rem 0; }
 .rs-install { font-family: var(--md-code-font-family); }
