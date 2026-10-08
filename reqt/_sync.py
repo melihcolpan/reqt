@@ -123,8 +123,11 @@ def stream_sync(urls: Iterable[Union[str, Request]], method: str = "GET", **opti
             yield item
     finally:
         stop.set()
-        if thread.is_alive():
-            loop.call_soon_threadsafe(task.cancel)  # stop requests still in flight
+        if not task.done():
+            try:
+                loop.call_soon_threadsafe(task.cancel)  # stop requests still in flight
+            except RuntimeError:
+                pass  # the loop has just finished and closed on its own
         while thread.is_alive():  # let the producer notice `stop` even if the queue is full
             try:
                 results.get_nowait()
