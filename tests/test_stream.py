@@ -1,11 +1,11 @@
 import itertools
 
-import reqt
+import reqstorm
 
 
 async def test_streams_results_as_they_complete(server):
     urls = [f"{server}/slow?delay=0.4", f"{server}/ok"]
-    order = [result.index async for result in reqt.stream(urls)]
+    order = [result.index async for result in reqstorm.stream(urls)]
     assert order == [1, 0]
 
 
@@ -19,7 +19,7 @@ async def test_consumes_a_generator_lazily(server):
             yield f"{server}/echo?i={i}"
 
     received = 0
-    async for _ in reqt.stream(urls(), concurrency=4):
+    async for _ in reqstorm.stream(urls(), concurrency=4):
         received += 1
         if received == 10:
             break
@@ -33,7 +33,7 @@ async def test_error_while_reading_urls_is_raised(server):
         raise RuntimeError("bad input")
 
     try:
-        async for _ in reqt.stream(urls()):
+        async for _ in reqstorm.stream(urls()):
             pass
     except RuntimeError as error:
         assert str(error) == "bad input"

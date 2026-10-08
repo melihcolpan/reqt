@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reqt"
+version = "2.0.1"
+description = "reqt has been renamed to reqstorm. This package installs reqstorm and re-exports it."
+readme = "README.md"
+license = "MIT"
+authors = [{ name = "Melih Colpan", email = "melihcolpan1@gmail.com" }]
+requires-python = ">=3.9"
+dependencies = ["reqstorm>=2.0,<3"]
+classifiers = ["Development Status :: 7 - Inactive", "Programming Language :: Python :: 3"]
+
+[project.urls]
+Homepage = "https://reqstorm.github.io"
+Source = "https://github.com/melihcolpan/reqstorm"
+
+[tool.setuptools]
+packages = ["reqt"]

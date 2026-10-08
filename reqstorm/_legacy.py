@@ -9,15 +9,15 @@ from typing import Any, Callable, Iterable, Mapping, Optional
 
 import aiohttp
 
-logger = logging.getLogger("reqt")
+logger = logging.getLogger("reqstorm")
 
 _LEGACY_KEYWORDS = {"request_type", "semaphore_limit"}
 
 
 def _warn() -> None:
     warnings.warn(
-        "Passing a callback as `method` is the reqt 1.x API and will be removed in reqt 3.0. "
-        "Use `results = await reqt.fetch_all(urls)` or `callback=`; see the README.",
+        "Passing a callback as `method` is the reqt 1.x API and will be removed in reqstorm 3.0. "
+        "Use `results = await reqstorm.fetch_all(urls)` or `callback=`; see the README.",
         DeprecationWarning,
         stacklevel=4,
     )
@@ -63,13 +63,13 @@ async def legacy_fetch_all(
                 except asyncio.CancelledError:
                     raise
                 except Exception:
-                    logger.exception("reqt: request to %s failed", url)
+                    logger.exception("reqstorm: request to %s failed", url)
 
         await asyncio.gather(*(fetch(url) for url in urls))
 
 
 class Reqt:
-    """The reqt 1.x class. Deprecated: use ``reqt.fetch_all``."""
+    """The reqt 1.x class. Deprecated: use ``reqstorm.fetch_all``."""
 
     def __init__(
         self,

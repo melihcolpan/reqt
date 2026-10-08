@@ -69,7 +69,7 @@ class Progress:
             count = f"{self.done}/{self._total} ({self.done * 100 // self._total}%)"
         else:
             count = str(self.done)
-        line = f"reqt: {count}  ok {self.ok}  failed {self.failed}  {rate:.1f} req/s"
+        line = f"reqstorm: {count}  ok {self.ok}  failed {self.failed}  {rate:.1f} req/s"
         if self._total and rate > 0 and self.done < self._total:
             line += f"  ETA {format_duration((self._total - self.done) / rate)}"
         return line

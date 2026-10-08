@@ -41,7 +41,7 @@ jobs:
         env:
           # Throwaway database inside the CI job: no password needed
           POSTGRES_HOST_AUTH_METHOD: trust
-          POSTGRES_DB: reqt
+          POSTGRES_DB: reqstorm
         ports: ["5432:5432"]
         options: >-
           --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 20
@@ -49,13 +49,13 @@ jobs:
         image: mysql:8.4
         env:
           MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
-          MYSQL_DATABASE: reqt
+          MYSQL_DATABASE: reqstorm
         ports: ["3306:3306"]
         options: >-
           --health-cmd "mysqladmin ping --silent" --health-interval 2s --health-timeout 5s --health-retries 30
     env:
-      REQT_TEST_POSTGRES: host=127.0.0.1 port=5432 user=postgres dbname=reqt
-      REQT_TEST_MYSQL: "127.0.0.1:3306:root::reqt"
+      REQSTORM_TEST_POSTGRES: host=127.0.0.1 port=5432 user=postgres dbname=reqstorm
+      REQSTORM_TEST_MYSQL: "127.0.0.1:3306:root::reqstorm"
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -75,7 +75,7 @@ jobs:
       - run: python -m pip install -e ".[lint]"
       - run: ruff check .
       - run: ruff format --check .
-      - run: mypy reqt
+      - run: mypy reqstorm
 
   package:
     name: Build package
@@ -87,4 +87,10 @@ jobs:
           python-version: "3.13"
       - run: python -m pip install build twine
       - run: python -m build
+      - run: python -m build compat/reqt --outdir dist
       - run: python -m twine check --strict dist/*
+      - name: The reqt package installs and re-exports reqstorm
+        run: |
+          python -m venv /tmp/compat
+          /tmp/compat/bin/pip install --find-links dist dist/reqt-*.whl
+          /tmp/compat/bin/python -W error::UserWarning -c "import reqt, reqstorm; assert reqt.fetch_all is reqstorm.fetch_all"
