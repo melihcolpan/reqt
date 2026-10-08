@@ -23,6 +23,22 @@ results = reqstorm.fetch_all_sync(
 
 The limit applies to each host (`host:port`) separately, so requests to different APIs do not slow each other down. Requests to one host are spaced evenly, and retries count towards the limit too.
 
+## Following the server: `rate_limit="auto"`
+
+When you do not know an API's limit, let the server tell you:
+
+```python
+results = reqstorm.fetch_all_sync(urls, rate_limit="auto")
+```
+
+Requests start without a limit. Then, per host:
+
+- A `429 Too Many Requests` pauses the host for `Retry-After` (seconds or an HTTP date) or until the rate-limit window resets, doubles the spacing between its requests, and sends the request again. These 429 retries (up to 10 per request) are not counted in `retries`.
+- `X-RateLimit-Remaining` / `X-RateLimit-Reset` (also `RateLimit-*` and `X-Rate-Limit-*`) spread the remaining requests evenly over the rest of the window, and pause the host when none are left. A reset value larger than 10^9 is read as a Unix time, as GitHub sends it; smaller values are seconds.
+- Each successful response without such headers shortens the spacing by 10 %, so the rate recovers when the server stops pushing back.
+
+Pauses are capped at 5 minutes. `concurrency` and `concurrency_per_host` still apply.
+
 ## Concurrency
 
 `concurrency` caps how many requests are in flight at once (default 100). `concurrency_per_host` caps it per host (default: no per-host cap). Requests are spread over a fixed number of workers that read your URLs lazily, so a generator of millions of URLs is fine.

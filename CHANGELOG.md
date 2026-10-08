@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.2.0
+
+### Added
+- **Adaptive rate limit:** `rate_limit="auto"` follows the server. A 429 pauses the host for `Retry-After` (or until the window resets) and doubles the spacing between its requests; `X-RateLimit-Remaining` / `X-RateLimit-Reset` (also `RateLimit-*` and `X-Rate-Limit-*`) spread the remaining requests over the window; successful responses bring the rate back up. 429 responses are retried up to 10 times without using up `retries`.
+- **Pagination:** `paginate=` follows each starting URL through its pages with `NextLink("links.next")`, `LinkHeader()`, `Cursor("meta.next_cursor", param="cursor")` or `PageNumber("page", items="data")`, or your own `Paginator`. Results carry `page` and `seed_index`. Works with schemas and `explode`, so every page becomes typed rows. `max_pages` (default 1000) stops endless APIs, and a next page equal to the current one ends pagination.
+- **Command line:** the `reqstorm` command (also `python -m reqstorm`) sends the URLs in a file or on standard input and writes JSON lines, CSV or SQLite. It supports rate limits (`--rate 100/min` or `auto`), retries, retry rounds, resume, `--estimate`, `--template`, `--paginate`, `--schema` files, `--infer-schema`, `--cache`, `--proxy`, `--bearer` / `REQSTORM_TOKEN` and `--report`. The exit status is 1 when requests failed.
+- **Token refresh:** `auth=reqstorm.BearerAuth(token, refresh=get_token)` sends the token and, on a 401, gets a new one and sends the request again once. Concurrent 401s share one refresh; `refresh` may be a coroutine function.
+- **Requests from data:** `reqstorm.from_template(url, rows, json=, params=)` makes one request per row, with percent-encoded `{field}` placeholders. `reqstorm.read_csv(path)` and `reqstorm.read_sql(connection, query)` read rows lazily.
+- **Run report:** `Results.report()` gives response time percentiles (min, p50, p90, p95, p99, max, mean), counts by status and error type, attempts, retries, cached results and per-host figures. `summary()` now also includes `latency`, `statuses` and `hosts`, and `Summary.report` has the same report for `fetch_to_file` / `fetch_to_db`.
+- **Caching:** `cache=reqstorm.Cache("responses.sqlite", ttl=None)` stores successful GET responses and revalidates them with `If-None-Match` / `If-Modified-Since`; a 304 reuses the stored response. With `ttl`, recent responses skip the network. Cached results have `from_cache=True`.
+- **Proxies:** `proxy=` takes one proxy URL or a list used in turn, attempt by attempt; `Request(proxy=...)` sets one per request.
+- **Pydantic models as schemas:** pass a Pydantic 2 model as `schema=` to `fetch_to_db`, `fetch_to_file` or `extract`. Fields become columns, `json_schema_extra={"path": ..., "key": True}` sets paths and keys, and records are validated by the model. Install with `reqstorm[pydantic]`.
+
+### Changed
+- `Result.to_dict()` and JSONL/CSV output include `from_cache` and `page`.
+
 ## 2.1.0
 
 ### Added

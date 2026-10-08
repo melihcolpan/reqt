@@ -35,7 +35,8 @@ results = reqstorm.fetch_all_sync(
 
 print(results.summary())
 # {'total': 7000, 'ok': 6987, 'failed': 13,
-#  'failures': {'HTTP 404': 9, 'TimeoutError': 4}}
+#  'failures': {'HTTP 404': 9, 'TimeoutError': 4},
+#  'latency': {'p50': 0.21, 'p95': 0.73, ...}, ...}
 
 for error in results.errors():
     print(error["url"], error["error"] or error["status"])
@@ -52,9 +53,13 @@ for error in results.errors():
 - [Writing results to a file](#writing-results-to-a-file)
 - [Writing results to a database](#writing-results-to-a-database)
 - [Structured data: JSON to typed columns](#structured-data-json-to-typed-columns)
+- [Pagination](#pagination)
+- [Requests from a CSV file or a table](#requests-from-a-csv-file-or-a-table)
+- [Tokens, proxies and caching](#tokens-proxies-and-caching)
 - [Requests, headers and bodies](#requests-headers-and-bodies)
 - [Streaming results](#streaming-results)
 - [TLS and sessions](#tls-and-sessions)
+- [Command line](#command-line)
 - [When to use something else](#when-to-use-something-else)
 - [Coming from reqt](#coming-from-reqt)
 - [Development](#development)
@@ -75,15 +80,19 @@ reqstorm does all of that for you, with one call.
 | Feature | What you get |
 |---|---|
 | One result per request | Failures are recorded, never raised; every attempt is kept |
-| Rate limits | Per host, in any unit: `"10/s"`, `"100/min"`, `"1000/h"` |
+| Rate limits | Per host, in any unit (`"100/min"`), or `"auto"` from the server's 429s and headers |
 | Concurrency | Overall and per host |
 | Retries | Immediate, with backoff and `Retry-After`; plus end-of-run rounds |
-| Reports | `summary()`, `errors()`, `to_dicts()` |
+| Reports | Failures by reason, p50/p95/p99 response times, per-host figures |
+| Pagination | Next links, `Link` headers, cursors and page numbers |
+| Requests from data | URL templates over CSV rows or SQL query results |
+| Tokens and proxies | Refresh an expired token on 401; rotate through proxies |
+| Caching | ETag / `If-None-Match`: unchanged resources cost a 304 |
 | Output | JSONL, CSV, SQLite, PostgreSQL, MySQL; ordered or as completed |
 | Typed columns | JSON fields to checked columns, nested paths, arrays to rows |
 | Resume | Skip what already succeeded after an interruption |
 | Planning | `estimate()` before you start, progress with ETA while running |
-| API | Blocking (scripts, Jupyter) and asyncio |
+| API | Blocking (scripts, Jupyter), asyncio and a `reqstorm` command |
 | Safety | TLS verified, timeouts on, bounded concurrency, fully typed |
 
 ## Installation
@@ -92,7 +101,7 @@ reqstorm does all of that for you, with one call.
 $ python -m pip install reqstorm
 ```
 
-reqstorm supports Python 3.9 to 3.13 on Linux, macOS and Windows. Its only dependency is [aiohttp](https://docs.aiohttp.org). For PostgreSQL or MySQL output, install the driver you already use (`psycopg`, `psycopg2`, `pymysql`, `mysqlclient` or `mysql-connector-python`).
+reqstorm supports Python 3.9 to 3.13 on Linux, macOS and Windows. Its only dependency is [aiohttp](https://docs.aiohttp.org). For PostgreSQL or MySQL output, install the driver you already use (`psycopg`, `psycopg2`, `pymysql`, `mysqlclient` or `mysql-connector-python`). To use Pydantic models as schemas, install `reqstorm[pydantic]`.
 
 ## Quick start
 
@@ -168,6 +177,17 @@ results.failed       # failed results
 results.summary()    # counts, failures grouped by reason
 results.errors()     # failed requests as plain dicts
 results.to_dicts()   # every result as a dict
+results.report()     # response times, statuses, hosts
+```
+
+```python
+>>> results.report()["latency"]
+{'min': 0.081, 'p50': 0.214, 'p90': 0.502,
+ 'p95': 0.733, 'p99': 1.902, 'max': 10.004,
+ 'mean': 0.297}
+>>> results.report()["hosts"]["api.example.com:443"]
+{'requests': 7000, 'ok': 6987, 'failed': 13,
+ 'latency': {...}}
 ```
 
 `errors()` returns plain data, ready for a log file or a DataFrame:
@@ -217,6 +237,8 @@ results = reqstorm.fetch_all_sync(
 | `(100, 60)` | 100 every 60 seconds |
 
 The limit applies to each host (`host:port`) separately and counts retries too, so requests to different APIs never slow each other down. Requests to one host are spaced evenly.
+
+**Don't know the limit?** `rate_limit="auto"` learns it from the server. A `429 Too Many Requests` pauses the host for `Retry-After` and slows it down; `X-RateLimit-Remaining` and `X-RateLimit-Reset` spread the remaining requests over the window; the rate recovers when the server stops pushing back. 429 responses are retried without using up `retries`.
 
 **Plan before you send.** `estimate` predicts the duration and names the bottleneck, without sending anything:
 
@@ -358,7 +380,84 @@ print(summary.rows, summary.rejected)
 
 The same schema works for `.db`, `.jsonl` and `.csv` files, and `reqstorm.extract(results, schema)` returns the rows as Python lists. `reqstorm.infer_schema(samples)` drafts a schema from a few responses for you to review.
 
+**Already have a Pydantic model?** Pass it as the schema; its fields become columns and Pydantic validates each record:
+
+```python
+class Product(BaseModel):
+    id: int = Field(
+        json_schema_extra={"key": True})
+    name: str
+    price: Optional[float] = Field(
+        None,
+        json_schema_extra={"path": "pricing.amount"})
+
+reqstorm.fetch_to_file_sync(
+    urls, "shop.db", schema=Product, explode="items"
+)
+```
+
 More in the [structured data guide](https://reqstorm.github.io/guide/structured-data/).
+
+## Pagination
+
+`paginate=` follows each starting URL through all of its pages, concurrently with the other URLs and under the same rate limits:
+
+```python
+results = reqstorm.fetch_all_sync(
+    ["https://api.example.com/products"],
+    paginate=reqstorm.NextLink("links.next"),
+)
+```
+
+| Strategy | Next page comes from |
+|---|---|
+| `NextLink("links.next")` | a URL in the JSON body |
+| `LinkHeader()` | the `Link` header (GitHub style) |
+| `Cursor("meta.next", param="cursor")` | a cursor in the body |
+| `PageNumber("page", items="data")` | `?page=2, 3, ...` until empty |
+
+Each result has `page` and `seed_index` (its starting URL). Combined with a schema and `explode`, every page of a catalogue becomes typed rows in one call. `max_pages` (1000 by default) stops an API that never ends.
+
+## Requests from a CSV file or a table
+
+`from_template` makes one request per row. Values are percent-encoded, and rows are read lazily:
+
+```python
+rows = reqstorm.read_csv("users.csv")
+requests = reqstorm.from_template(
+    "https://api.example.com/users/{id}",
+    rows,
+    params={"country": "{country}"},
+)
+reqstorm.fetch_to_file_sync(requests, "users.jsonl")
+```
+
+`read_sql(connection, query)` reads rows from any database connection instead, and `json=` builds a request body per row.
+
+## Tokens, proxies and caching
+
+**Tokens that expire.** `BearerAuth` gets a new token when a response is 401 and sends the request again. Concurrent 401s share one refresh:
+
+```python
+auth = reqstorm.BearerAuth(refresh=get_token)
+reqstorm.fetch_all_sync(urls, auth=auth)
+```
+
+**Proxies.** One proxy, a pool used in turn, or one per `Request`:
+
+```python
+reqstorm.fetch_all_sync(urls, proxy=[
+    "http://proxy-1.example.com:8080",
+    "http://proxy-2.example.com:8080",
+])
+```
+
+**Caching.** `Cache` keeps responses in an SQLite file. The next run asks the server with `If-None-Match`; an unchanged resource comes back as a `304` with no body, and the stored response is used. With `ttl`, recent responses skip the network entirely:
+
+```python
+cache = reqstorm.Cache("responses.sqlite")
+reqstorm.fetch_all_sync(urls, cache=cache)
+```
 
 ## Requests, headers and bodies
 
@@ -414,6 +513,24 @@ results = reqstorm.fetch_all_sync(urls, ssl=context)
 `verify_ssl=False` turns verification off; only use it for hosts you control.
 
 In async code, `session=` takes an existing `aiohttp.ClientSession` to share cookies, connection pools or proxy settings. reqstorm does not close it.
+
+## Command line
+
+The `reqstorm` command runs a batch without any Python code:
+
+```console
+$ reqstorm urls.txt -o results.jsonl \
+    --rate 100/min --retries 2
+$ reqstorm urls.txt --estimate --rate 100/min
+$ cat urls.txt | reqstorm --rate auto -q > out.jsonl
+$ reqstorm users.csv -o users.db \
+    --template "https://api.example.com/users/{id}"
+$ reqstorm urls.txt -o shop.db --report \
+    --paginate next:links.next \
+    --schema products.json --explode items
+```
+
+`reqstorm --help` lists every option, and the [command line guide](https://reqstorm.github.io/guide/cli/) explains them.
 
 ## When to use something else
 
