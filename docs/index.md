@@ -64,7 +64,7 @@ print(results.summary())
 
     JSONL, CSV, SQLite, PostgreSQL or MySQL, written as results arrive, so millions of results never fill your memory. Resume an interrupted run.
 
-    [:octicons-arrow-right-24: Files](guide/files.md) · [Databases](guide/databases.md)
+    [:octicons-arrow-right-24: Files](guide/files.md) · [Databases](guide/databases.md) · [Typed columns](guide/structured-data.md)
 
 -   :material-language-python:{ .lg .middle } **With or without asyncio**
 

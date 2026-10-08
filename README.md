@@ -51,6 +51,7 @@ for error in results.errors():
 - [Timeouts and retries](#timeouts-and-retries)
 - [Writing results to a file](#writing-results-to-a-file)
 - [Writing results to a database](#writing-results-to-a-database)
+- [Structured data: JSON to typed columns](#structured-data-json-to-typed-columns)
 - [Requests, headers and bodies](#requests-headers-and-bodies)
 - [Streaming results](#streaming-results)
 - [TLS and sessions](#tls-and-sessions)
@@ -79,6 +80,7 @@ reqstorm does all of that for you, with one call.
 | Retries | Immediate, with backoff and `Retry-After`; plus end-of-run rounds |
 | Reports | `summary()`, `errors()`, `to_dicts()` |
 | Output | JSONL, CSV, SQLite, PostgreSQL, MySQL; ordered or as completed |
+| Typed columns | JSON fields to checked columns, nested paths, arrays to rows |
 | Resume | Skip what already succeeded after an interruption |
 | Planning | `estimate()` before you start, progress with ETA while running |
 | API | Blocking (scripts, Jupyter) and asyncio |
@@ -319,6 +321,44 @@ GROUP BY status;
 ```
 
 Rows are inserted in batches on a background thread, so a remote database does not slow the requests down. Existing rows are never deleted. `body="bytes"` stores the raw body in a binary column.
+
+## Structured data: JSON to typed columns
+
+Instead of storing raw responses, give a schema and each JSON field goes to its own typed column. Every value is checked first, so a number column never gets a string or a `NaN`.
+
+```python
+from reqstorm import Field
+
+schema = {
+    "id": Field("id", int, required=True, key=True),
+    "name": Field("name", str, required=True),
+    "price": Field("pricing.amount", float),
+    "tags": Field("tags", "json"),
+    "updated": Field("updated_at", "datetime"),
+    "page": Field("$.meta.page", int),
+}
+
+summary = reqstorm.fetch_to_db_sync(
+    urls,
+    connection,
+    table="products",
+    schema=schema,
+    explode="items",  # one row per array element
+    rejects_table="products_rejects",
+)
+print(summary.rows, summary.rejected)
+```
+
+- **Types:** `int`, `float`, `str`, `bool`, `"datetime"` and `"json"` become `BIGINT`, `DOUBLE PRECISION`, `TEXT`, `BOOLEAN`, `TIMESTAMPTZ` and `JSONB` in PostgreSQL, and their equivalents in MySQL and SQLite.
+- **Strict checks:** `10.5` is rejected for an `int`, `"42"` for a number, and NaN or Infinity always. With `coerce=True`, compatible values such as `"12.5"` are converted.
+- **Nested JSON:** dotted paths read nested values (`"pricing.amount"`, `"tags.0"`). Type `"json"` keeps a part whole. `explode` makes each array element a row, and `"$."` paths read from the response root.
+- **Rejected records** are never written, not even partly. They are listed in `summary.errors` with their reasons and, with `rejects_table`, stored with the original record.
+- **No duplicates:** `key=True` fields form the primary key. Running the batch again updates existing rows.
+- **Resume works:** each row records the request it came from (`source_url`).
+
+The same schema works for `.db`, `.jsonl` and `.csv` files, and `reqstorm.extract(results, schema)` returns the rows as Python lists. `reqstorm.infer_schema(samples)` drafts a schema from a few responses for you to review.
+
+More in the [structured data guide](https://reqstorm.github.io/guide/structured-data/).
 
 ## Requests, headers and bodies
 
