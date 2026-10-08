@@ -32,6 +32,38 @@ jobs:
       - run: python -m pip install -e ".[test]"
       - run: python -m pytest -q
 
+  databases:
+    name: PostgreSQL and MySQL
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          # Throwaway database inside the CI job: no password needed
+          POSTGRES_HOST_AUTH_METHOD: trust
+          POSTGRES_DB: reqt
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 20
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: "yes"
+          MYSQL_DATABASE: reqt
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping --silent" --health-interval 2s --health-timeout 5s --health-retries 30
+    env:
+      REQT_TEST_POSTGRES: host=127.0.0.1 port=5432 user=postgres dbname=reqt
+      REQT_TEST_MYSQL: "127.0.0.1:3306:root::reqt"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: python -m pip install -e ".[test]" "psycopg[binary]" pymysql
+      - run: python -m pytest -q tests/test_ordered_and_db.py -rs
+
   lint:
     name: Lint and types
     runs-on: ubuntu-latest
