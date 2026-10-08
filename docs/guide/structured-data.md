@@ -125,3 +125,25 @@ print(schema)
 ```
 
 The draft reflects only the samples: a field that was always an integer there may be a decimal in the next response, and a field that was always present may be optional. Check it against the API's documentation, add `key=True` to the identifying field, and paste it into your code.
+
+## Pydantic models
+
+If you already describe the API with Pydantic, pass the model as the schema (`pip install "reqstorm[pydantic]"`, Pydantic 2):
+
+```python
+from typing import Optional
+from pydantic import BaseModel, Field
+
+class Product(BaseModel):
+    id: int = Field(json_schema_extra={"key": True})
+    name: str
+    price: Optional[float] = Field(None, json_schema_extra={"path": "pricing.amount"})
+    tags: list[str] = []
+
+reqstorm.fetch_to_file_sync(urls, "shop.db", table="products", schema=Product, explode="items")
+```
+
+- Each model field becomes a column of the same name. Its path is `json_schema_extra={"path": ...}`, else the field's alias, else its name.
+- `json_schema_extra={"key": True}` makes it part of the primary key.
+- `int`, `float`, `str`, `bool` and `datetime` (optional or not) get those column types; lists, dicts, nested models and unions are stored as JSON.
+- Validation is Pydantic's own, including coercion such as `"12.5"` to `12.5` unless the model is strict. A record that fails validation is rejected with Pydantic's messages as the reasons.

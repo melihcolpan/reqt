@@ -23,6 +23,25 @@
 ::: reqstorm.extract
 ::: reqstorm.SchemaError
 
+## Pagination
+
+::: reqstorm.NextLink
+::: reqstorm.LinkHeader
+::: reqstorm.Cursor
+::: reqstorm.PageNumber
+::: reqstorm.Paginator
+
+## Requests from data
+
+::: reqstorm.from_template
+::: reqstorm.read_csv
+::: reqstorm.read_sql
+
+## Tokens and caching
+
+::: reqstorm.BearerAuth
+::: reqstorm.Cache
+
 ## Requests and results
 
 ::: reqstorm.Request

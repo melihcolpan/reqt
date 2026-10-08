@@ -29,7 +29,8 @@ print(reqstorm.estimate(len(urls), rate_limit="100/min"))
 
 results = reqstorm.fetch_all_sync(urls, rate_limit="100/min", retries=2, progress=True)
 print(results.summary())
-# {'total': 7000, 'ok': 6987, 'failed': 13, 'failures': {'HTTP 404': 9, 'TimeoutError': 4}}
+# {'total': 7000, 'ok': 6987, 'failed': 13, 'failures': {'HTTP 404': 9, 'TimeoutError': 4},
+#  'latency': {'p50': 0.21, 'p95': 0.73, ...}, ...}
 ```
 
 <div class="grid cards" markdown>
@@ -46,7 +47,7 @@ print(results.summary())
 
     ---
 
-    `"10/s"`, `"100/min"`, `"1000/h"`, per host, plus overall and per-host concurrency. Know how long a batch takes before you start it.
+    `"10/s"`, `"100/min"`, `"1000/h"` per host, or `"auto"` to follow the server's 429s and rate-limit headers. Know how long a batch takes before you start it.
 
     [:octicons-arrow-right-24: Rate limits](guide/limits.md)
 
@@ -65,6 +66,30 @@ print(results.summary())
     JSONL, CSV, SQLite, PostgreSQL or MySQL, written as results arrive, so millions of results never fill your memory. Resume an interrupted run.
 
     [:octicons-arrow-right-24: Files](guide/files.md) · [Databases](guide/databases.md) · [Typed columns](guide/structured-data.md)
+
+-   :material-book-open-page-variant:{ .lg .middle } **Every page of an API**
+
+    ---
+
+    Follow next links, `Link` headers, cursors or page numbers, and turn every page into typed rows in the same call.
+
+    [:octicons-arrow-right-24: Pagination](guide/pagination.md) · [Requests from data](guide/templates.md)
+
+-   :material-key-chain:{ .lg .middle } **Tokens, proxies and caching**
+
+    ---
+
+    Refresh an expired token on a 401 without stopping the run, rotate through proxies, and skip unchanged resources with ETags.
+
+    [:octicons-arrow-right-24: Tokens, proxies and caching](guide/auth.md)
+
+-   :material-console:{ .lg .middle } **A command for quick jobs**
+
+    ---
+
+    `reqstorm urls.txt -o results.jsonl --rate 100/min` runs a batch with no Python code, and `--report` shows p50/p95/p99 response times per host.
+
+    [:octicons-arrow-right-24: Command line](guide/cli.md)
 
 -   :material-language-python:{ .lg .middle } **With or without asyncio**
 

@@ -55,7 +55,11 @@ nav:
       - Writing to files: guide/files.md
       - Writing to databases: guide/databases.md
       - Structured data: guide/structured-data.md
+      - Pagination: guide/pagination.md
+      - Requests from data: guide/templates.md
+      - Tokens, proxies and caching: guide/auth.md
       - Requests, streaming and TLS: guide/requests.md
+      - Command line: guide/cli.md
   - Coming from reqt: coming-from-reqt.md
   - API reference: api.md
   - Changelog: changelog.md

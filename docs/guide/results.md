@@ -13,6 +13,8 @@
 | `attempts`, `elapsed` | How many attempts were made, and the total seconds they took |
 | `history` | Every attempt: its number, status, error and duration |
 | `url`, `method`, `final_url`, `index` | What was requested, where redirects ended, and its position in the input |
+| `from_cache` | `True` when the response came from the [cache](auth.md#caching-and-conditional-requests) |
+| `page`, `seed_index` | With [pagination](pagination.md): the page number and the position of the starting URL |
 
 ```python
 result = results[0]
@@ -28,7 +30,7 @@ if not result.ok:
 ```python
 results.succeeded     # the successful results
 results.failed        # the failed results
-results.summary()     # {'total': 7000, 'ok': 6987, 'failed': 13, 'failures': {'HTTP 404': 9, 'TimeoutError': 4}}
+results.summary()     # counts, failures by reason, response times, statuses and hosts
 results.errors()      # the failed requests as dicts: index, url, status, error, attempts, history
 results.to_dicts()    # every result as a dict, ready for json.dump or a pandas DataFrame
 ```
@@ -62,3 +64,21 @@ with open("errors.json", "w") as file:
   }
 ]
 ```
+
+## Response times, statuses and hosts
+
+`results.report()` summarises how the batch went, for example to compare two APIs or to find a slow host:
+
+```python
+>>> report = results.report()
+>>> report["latency"]
+{'min': 0.081, 'p50': 0.214, 'p90': 0.502, 'p95': 0.733, 'p99': 1.902, 'max': 10.004, 'mean': 0.297}
+>>> report["statuses"]
+{200: 6987, 404: 9, 503: 2}
+>>> report["errors"]
+{'TimeoutError': 2}
+>>> report["hosts"]["api.example.com:443"]
+{'requests': 7000, 'ok': 6987, 'failed': 13, 'latency': {...}}
+```
+
+Times are in seconds per request, retries included; responses served from the cache are left out of them. The report also has `total`, `ok`, `failed`, `attempts`, `retries` and `from_cache`. `summary()` includes `latency`, `statuses` and `hosts` too, and `fetch_to_file` / `fetch_to_db` return the same report in `summary.report`.
