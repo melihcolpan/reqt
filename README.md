@@ -49,6 +49,7 @@ for error in results.errors():
 - [Quick start](#quick-start)
 - [Results and reports](#results-and-reports)
 - [Rate limits and concurrency](#rate-limits-and-concurrency)
+- [Progress and logging](#progress-and-logging)
 - [Timeouts and retries](#timeouts-and-retries)
 - [Writing results to a file](#writing-results-to-a-file)
 - [Writing results to a database](#writing-results-to-a-database)
@@ -92,6 +93,7 @@ reqstorm does all of that for you, with one call.
 | Typed columns | JSON fields to checked columns, nested paths, arrays to rows |
 | Resume | Skip what already succeeded after an interruption |
 | Planning | `estimate()` before you start, progress with ETA while running |
+| Logging | Retries, pauses and failures; per-run level, file and JSON, independent of the app |
 | API | Blocking (scripts, Jupyter), asyncio and a `reqstorm` command |
 | Safety | TLS verified, timeouts on, bounded concurrency, fully typed |
 
@@ -256,6 +258,41 @@ The limit applies to each host (`host:port`) separately and counts retries too, 
 reqstorm: 3500/7000 (50%)  ok 3493  failed 7
           1.7 req/s  ETA 35m 00s
 ```
+
+## Progress and logging
+
+`progress=True` shows a line on stderr that keeps moving even while every request is waiting, so you can tell a long run is alive:
+
+```text
+reqstorm: 3500/7000 (50%)  ok 3493
+  failed 7  active 12  retries 41
+  1.7 req/s  ETA 34m 10s
+```
+
+It shows requests in flight, retries, the rate over the last minute, the retry round, hosts paused after a 429, and the time left. `progress=` also takes a function, which gets a `ProgressInfo` every two seconds. For a generator, pass `total=` to get a percentage.
+
+**Logs.** reqstorm logs each retry and its reason, pauses, token refreshes and final failures. Turn them on for one run, independent of your application's logging setup:
+
+```python
+reqstorm.fetch_to_file_sync(
+    urls, "out.jsonl",
+    log_level="INFO",    # or DEBUG: every attempt
+    log_file="logs/",    # a new file per run
+    log_format="json",   # optional
+)
+```
+
+```text
+14:32:41 WARNING reqstorm: GET .../items/412
+  failed (HTTP 503) on attempt 1 of 3;
+  retrying in 0.4s
+15:42:18 ERROR   reqstorm: GET .../items/913
+  failed after 3 attempts: HTTP 404
+```
+
+Log files are never overwritten: a directory or `{time}` in the name gives a time-stamped file per run, and an existing `run.log` becomes `run-2.log`. Without `log_level`, reqstorm logs to the standard `"reqstorm"` logger and follows your application's configuration.
+
+**Read results while they are written.** Output files are written at least once a second (`flush_interval`), even while nothing finishes, and never with half a line; SQLite files are opened in WAL mode, so other programs can read them during the run.
 
 ## Timeouts and retries
 
@@ -535,7 +572,7 @@ $ reqstorm urls.txt -o shop.db --report \
     --schema products.json --explode items
 ```
 
-`reqstorm --help` lists every option, and the [command line guide](https://reqstorm.github.io/guide/cli/) explains them.
+`-v` / `-vv` log more, `-q` logs only errors, and `--log-file logs/` writes a new log file per run. `reqstorm --help` lists every option, and the [command line guide](https://reqstorm.github.io/guide/cli/) explains them.
 
 ## When to use something else
 

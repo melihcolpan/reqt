@@ -51,6 +51,7 @@ nav:
   - Guide:
       - Results and reports: guide/results.md
       - Rate limits and concurrency: guide/limits.md
+      - Progress and logging: guide/observability.md
       - Timeouts and retries: guide/retries.md
       - Writing to files: guide/files.md
       - Writing to databases: guide/databases.md

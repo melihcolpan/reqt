@@ -50,4 +50,4 @@ A line cut short by an interruption is ignored. Without `resume`, a JSONL or CSV
 
 ## Other options
 
-`fetch_to_file` takes every option of `fetch_all`, such as `method`, `headers`, `concurrency`, `timeout`, `retries`, `retry_rounds` and `rate_limit`, plus `batch_size` (records written per batch).
+`fetch_to_file` takes every option of `fetch_all`, such as `method`, `headers`, `concurrency`, `timeout`, `retries`, `retry_rounds` and `rate_limit`, plus `batch_size` and `flush_interval`: results are written when 100 are waiting, and at least once a second, so other programs can read the file while it grows. See [Reading the output while it is written](observability.md#reading-the-output-while-it-is-written).
