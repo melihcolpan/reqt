@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.4.0
+
+### Added
+- **Logging:** reqstorm logs each retry with its reason and wait, hosts paused after a 429 or an exhausted rate limit, token refreshes, retry rounds, rejected schema records and requests that failed after all attempts, plus every attempt at `DEBUG`. Without options it logs to the standard `"reqstorm"` logger and follows the application's configuration.
+- **Per-run logging:** `log_level=` gives a run its own logger, independent of the application's logging configuration; `log_file=` sends it to a file and `log_format="json"` writes JSON lines with the event's fields. Log files are never overwritten: a directory or `{time}` gives a time-stamped file per run, and an existing name gets `-2`, `-3`, ... `Summary.log_file` names the file used. Proxy passwords are redacted.
+- **Progress line:** refreshed on a timer even while no request finishes, and now shows requests in flight, retries, the rate over the last minute, the retry round, paused hosts and an ETA from the recent rate (plus any running pause). On a terminal, log messages print above the line without breaking it.
+- `progress=` accepts a function that receives a `reqstorm.ProgressInfo` every two seconds and at the end. `stream()` now takes `progress=` too.
+- `total=` gives the progress line a percentage and an ETA when the requests come from a generator.
+- **Live output:** `flush_interval` (default 1 s) writes waiting results at least that often, also while no request finishes. JSON Lines and CSV batches are written in one piece, so readers never see half a line. SQLite files created by reqstorm use WAL mode, so they can be read during the run.
+- Command line: `-v` / `-vv`, `--log-file`, `--log-json`, `--flush-interval`; warnings and errors are logged by default and `-q` limits them to errors. The progress line is shown when results go to standard output too, and its total is counted from the input file.
+
+### Fixed
+- Invalid options of `fetch_to_file` no longer leave the output file open.
+
 ## 2.3.0
 
 ### Added

@@ -58,10 +58,10 @@ Pauses are capped at 5 minutes. `concurrency` and `concurrency_per_host` still a
 
 ## Progress
 
-`progress=True` prints progress to stderr. In a terminal the line updates in place; when output goes to a log, a new line is written every few seconds:
+`progress=True` prints a progress line to stderr, refreshed even while no request finishes:
 
 ```text
-reqstorm: 3500/7000 (50%)  ok 3493  failed 7  1.7 req/s  ETA 35m 00s
+reqstorm: 3500/7000 (50%)  ok 3493  failed 7  active 12  retries 41  1.7 req/s  ETA 34m 10s
 ```
 
-Pass a file object instead of `True` to write progress somewhere else.
+See [Progress and logging](observability.md) for what each part means, progress functions and log messages.

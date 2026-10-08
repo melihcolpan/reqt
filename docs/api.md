@@ -50,6 +50,10 @@
 ::: reqstorm.Attempt
 ::: reqstorm.HTTPStatusError
 
+## Progress
+
+::: reqstorm.ProgressInfo
+
 ## Planning
 
 ::: reqstorm.estimate

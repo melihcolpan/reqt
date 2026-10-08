@@ -61,7 +61,10 @@ $ reqstorm urls.txt -o results.jsonl --report
 | `--resume`, `--ordered`, `--body`, `--include-headers`, `--table`, `--rejects-table` | As in `fetch_to_file` |
 | `--estimate`, `--latency` | Print the expected duration and exit |
 | `--report` | Print response times, statuses and per-host figures to stderr |
-| `-q` | No progress line |
+| `-v`, `-vv` | Log more: run events (`INFO`), then every attempt (`DEBUG`). Warnings and errors are always logged |
+| `-q` | No progress line, errors only |
+| `--log-file PATH`, `--log-json` | Log to a file (time-stamped, never overwritten) and/or as JSON lines; see [Progress and logging](observability.md#log-files) |
+| `--flush-interval SECONDS` | Write waiting results to `-o` at least this often (default 1) |
 
 ## Schema files
 
