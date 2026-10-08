@@ -31,8 +31,9 @@ classifiers = [
 
 [project.optional-dependencies]
 pydantic = ["pydantic>=2"]
-test = ["pytest>=8", "pytest-asyncio>=0.23", "trustme>=1.1", "pydantic>=2"]
-lint = ["ruff>=0.6", "mypy>=1.10", "pydantic>=2"]
+socks = ["aiohttp-socks>=0.10"]
+test = ["pytest>=8", "pytest-asyncio>=0.23", "trustme>=1.1", "pydantic>=2", "aiohttp-socks>=0.10"]
+lint = ["ruff>=0.6", "mypy>=1.10", "pydantic>=2", "aiohttp-socks>=0.10"]
 
 [project.scripts]
 reqstorm = "reqstorm._cli:main"

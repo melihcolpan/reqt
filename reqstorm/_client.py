@@ -7,6 +7,7 @@ import base64
 import collections
 import itertools
 import json as jsonlib
+import random
 import ssl as ssllib
 import time
 from dataclasses import dataclass, field
@@ -34,6 +35,7 @@ from multidict import CIMultiDict, CIMultiDictProxy
 from ._adaptive import AdaptiveRateLimiter
 from ._limits import HostRateLimiter, RateLimit
 from ._progress import Progress, ProgressTarget
+from ._socks import SocksSessions, check_available, is_socks
 
 __all__ = ["Attempt", "HTTPStatusError", "Request", "Result", "Results", "fetch_all", "stream"]
 
@@ -245,6 +247,18 @@ class _Options:
     auth: Any = None
     cache: Any = None
     proxies: Optional[Iterator[str]] = None
+    socks: Optional[SocksSessions] = None
+    max_backoff: float = 30.0
+    jitter: bool = True
+
+    def backoff_delay(self, retry: int) -> float:
+        """Seconds to wait before retry number ``retry`` (1 for the first)."""
+        delay = min(self.backoff * (2 ** (retry - 1)), self.max_backoff)
+        if self.jitter:
+            # "Equal jitter": somewhere between half the delay and the full delay, so
+            # requests that failed together do not all retry at the same moment
+            delay = delay / 2 + random.uniform(0, delay / 2)
+        return delay
 
     def next_proxy(self) -> Optional[str]:
         return next(self.proxies) if self.proxies is not None else None
@@ -327,7 +341,13 @@ async def _send(session: aiohttp.ClientSession, request: Request, index: int, op
             if limiter is not None:
                 await limiter.wait(request.url)
             attempt_started = time.monotonic()
-            async with session.request(
+            proxy = request.proxy or options.next_proxy()
+            sender = session
+            if proxy is not None and is_socks(proxy):
+                if options.socks is None:
+                    raise ValueError("a SOCKS proxy needs a session created by reqstorm, not session=")
+                sender, proxy = options.socks.session(proxy), None
+            async with sender.request(
                 request.method or "GET",
                 request.url,
                 headers=headers or None,
@@ -336,7 +356,7 @@ async def _send(session: aiohttp.ClientSession, request: Request, index: int, op
                 data=request.data,
                 timeout=options.timeout,
                 ssl=options.ssl,
-                proxy=request.proxy or options.next_proxy(),
+                proxy=proxy,
             ) as response:
                 body = await response.read()
                 status, response_headers, final_url = response.status, response.headers, str(response.url)
@@ -361,7 +381,7 @@ async def _send(session: aiohttp.ClientSession, request: Request, index: int, op
             if status not in options.retry_statuses or retries_used >= options.retries:
                 break
             retries_used += 1
-            delay = _retry_after(response_headers) or options.backoff * (2 ** (retries_used - 1))
+            delay = _retry_after(response_headers) or options.backoff_delay(retries_used)
         except asyncio.CancelledError:
             raise
         except Exception as error:  # one failing request must not stop the others
@@ -371,7 +391,7 @@ async def _send(session: aiohttp.ClientSession, request: Request, index: int, op
             if not _is_retryable_error(error) or retries_used >= options.retries:
                 break
             retries_used += 1
-            delay = options.backoff * (2 ** (retries_used - 1))
+            delay = options.backoff_delay(retries_used)
         if delay:
             await asyncio.sleep(delay)
     if cache_key and result.ok and result.status == 200 and not result.from_cache:
@@ -392,6 +412,8 @@ async def stream(
     timeout: Optional[float] = 30.0,
     retries: int = 0,
     backoff: float = 0.5,
+    max_backoff: float = 30.0,
+    jitter: bool = True,
     retry_statuses: Sequence[int] = DEFAULT_RETRY_STATUSES,
     verify_ssl: bool = True,
     ssl: Optional[ssllib.SSLContext] = None,
@@ -416,6 +438,8 @@ async def stream(
         raise ValueError("retries must not be negative")
     if concurrency_per_host < 0:
         raise ValueError("concurrency_per_host must not be negative")
+    if backoff < 0 or max_backoff < 0:
+        raise ValueError("backoff and max_backoff must not be negative")
     if rate_limit == "auto":
         limiter: Any = AdaptiveRateLimiter()
     elif rate_limit is not None:
@@ -423,6 +447,10 @@ async def stream(
     else:
         limiter = None
     proxies = [proxy] if isinstance(proxy, str) else list(proxy or [])
+    if any(is_socks(item) for item in proxies):
+        check_available()  # fail before sending anything, not on every request
+        if session is not None:
+            raise ValueError("SOCKS proxies cannot be combined with session=; reqstorm opens their sessions")
     options = _Options(
         method=method,
         headers=headers,
@@ -432,12 +460,15 @@ async def stream(
         timeout=aiohttp.ClientTimeout(total=timeout),
         retries=retries,
         backoff=backoff,
+        max_backoff=max_backoff,
+        jitter=jitter,
         retry_statuses=frozenset(retry_statuses),
         ssl=ssl if ssl is not None else verify_ssl,
         rate_limiter=limiter,
         auth=auth,
         cache=cache,
         proxies=itertools.cycle(proxies) if proxies else None,
+        socks=SocksSessions(concurrency, concurrency_per_host) if session is None else None,
     )
 
     owns_session = session is None
@@ -527,6 +558,8 @@ async def stream(
             pass
         if owns_session:
             await session.close()
+        if options.socks is not None:
+            await options.socks.close()
 
 
 async def _execute(
@@ -590,6 +623,8 @@ async def fetch_all(
     timeout: Optional[float] = ...,
     retries: int = ...,
     backoff: float = ...,
+    max_backoff: float = ...,
+    jitter: bool = ...,
     retry_statuses: Sequence[int] = ...,
     retry_rounds: int = ...,
     retry_round_delay: float = ...,
@@ -631,6 +666,8 @@ async def fetch_all(
     timeout: Optional[float] = 30.0,
     retries: int = 0,
     backoff: float = 0.5,
+    max_backoff: float = 30.0,
+    jitter: bool = True,
     retry_statuses: Sequence[int] = DEFAULT_RETRY_STATUSES,
     retry_rounds: int = 0,
     retry_round_delay: float = 5.0,
@@ -660,7 +697,13 @@ async def fetch_all(
         timeout: Seconds allowed per attempt, including reading the body. ``None`` disables it.
         retries: How many times to retry a request right away after a connection error,
             a timeout or a status in ``retry_statuses``. Invalid URLs are not retried.
-        backoff: Delay before the first retry in seconds, doubled for each further retry.
+        backoff: Delay before the first retry in seconds, doubled for each further retry
+            (0.5, 1, 2, 4, ... with the default).
+        max_backoff: Upper limit for that delay in seconds (default 30), so many retries
+            never wait minutes. A ``Retry-After`` from the server is followed instead, up
+            to 60 seconds.
+        jitter: Wait a random time between half and all of the delay, so requests that
+            failed together do not retry at the same moment. ``False`` waits exactly.
             A ``Retry-After`` header (in seconds, up to 60) takes precedence.
         retry_rounds: After all requests have finished, send the ones that still failed
             for a retryable reason again, up to this many more rounds.
@@ -677,8 +720,10 @@ async def fetch_all(
         concurrency_per_host: Maximum requests in flight to each host; 0 means no per-host limit.
         auth: ``reqstorm.BearerAuth``: sends a token and refreshes it once on a 401.
         cache: ``reqstorm.Cache``: reuses earlier GET responses, revalidating with ETag.
-        proxy: A proxy URL (``"http://user:pass@host:port"``), or a list of them used in
-            turn. ``Request(proxy=...)`` sets one per request.
+        proxy: A proxy URL, or a list of them used in turn, attempt by attempt:
+            ``"http://user:pass@host:port"``, or ``socks5://``, ``socks5h://`` (the proxy
+            resolves host names), ``socks4://`` and ``socks4a://`` with
+            ``pip install 'reqstorm[socks]'``. ``Request(proxy=...)`` sets one per request.
         paginate: ``reqstorm.NextLink``, ``LinkHeader``, ``Cursor`` or ``PageNumber``: each
             starting URL is followed through its pages. Results carry ``page`` and
             ``seed_index``. Cannot be combined with ``retry_rounds``.
@@ -708,6 +753,8 @@ async def fetch_all(
         timeout=timeout,
         retries=retries,
         backoff=backoff,
+        max_backoff=max_backoff,
+        jitter=jitter,
         retry_statuses=retry_statuses,
         verify_ssl=verify_ssl,
         ssl=ssl,
