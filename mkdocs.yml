@@ -1,0 +1,103 @@
+site_name: reqstorm
+site_url: https://reqstorm.github.io/
+site_description: Send thousands of HTTP requests with rate limits, retries, progress and output to files or databases.
+site_author: Melih Colpan
+repo_url: https://github.com/melihcolpan/reqstorm
+repo_name: melihcolpan/reqstorm
+edit_uri: edit/master/docs/
+copyright: Copyright &copy; 2021-2026 Melih Colpan. MIT License.
+
+theme:
+  name: material
+  logo: assets/logo.svg
+  favicon: assets/logo.svg
+  icon:
+    repo: fontawesome/brands/github
+  features:
+    - content.code.copy
+    - content.tabs.link
+    - navigation.instant
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.highlight
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: custom
+      accent: custom
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  font:
+    text: Inter
+    code: JetBrains Mono
+
+extra_css:
+  - assets/extra.css
+
+nav:
+  - Home: index.md
+  - Getting started: getting-started.md
+  - Guide:
+      - Results and reports: guide/results.md
+      - Rate limits and concurrency: guide/limits.md
+      - Timeouts and retries: guide/retries.md
+      - Writing to files: guide/files.md
+      - Writing to databases: guide/databases.md
+      - Requests, streaming and TLS: guide/requests.md
+  - Coming from reqt: coming-from-reqt.md
+  - API reference: api.md
+  - Changelog: changelog.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            show_source: false
+            show_root_heading: true
+            show_root_full_path: false
+            show_signature_annotations: true
+            separate_signature: true
+            docstring_style: google
+            members_order: source
+            heading_level: 3
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/melihcolpan/reqstorm
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/reqstorm/

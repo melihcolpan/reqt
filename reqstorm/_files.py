@@ -434,7 +434,8 @@ async def fetch_to_file(
             Ordered output holds back records that finish early until the ones before them
             are done, so it uses more memory when a few requests are slow.
         progress: ``True`` to print progress to stderr, or a text stream to print it to.
-        retry_rounds, retry_round_delay: As for ``fetch_all``; each request still gets one record.
+        retry_rounds: As for ``fetch_all``; each request still gets one record.
+        retry_round_delay: Seconds to wait before each retry round.
         table: Table name for SQLite output.
         batch_size: Records written per batch.
         options: Any other option of ``fetch_all``, such as ``method``, ``concurrency``,

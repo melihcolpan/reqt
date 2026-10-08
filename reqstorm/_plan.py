@@ -41,7 +41,8 @@ def estimate(
         requests: Number of requests.
         rate_limit: The per-host rate limit you plan to use (same formats as ``fetch_all``).
         hosts: How many different hosts the requests are spread evenly over.
-        concurrency, concurrency_per_host: The limits you plan to use.
+        concurrency: The overall concurrency you plan to use.
+        concurrency_per_host: The per-host concurrency you plan to use; 0 means none.
         latency: Typical seconds per request (response time); 0.5 by default.
 
     Retries are not included; they add time for requests that fail.

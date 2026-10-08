@@ -89,3 +89,4 @@ ENV/
 
 # Pycharm files
 .idea
+site/
