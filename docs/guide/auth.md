@@ -37,7 +37,37 @@ reqstorm.fetch_all_sync(urls, proxy=[
 reqstorm.Request("https://api.example.com/eu-only", proxy="http://eu.proxy.example.com:8080")
 ```
 
-Each attempt takes the next proxy from the pool, so a retry goes through a different proxy. HTTP proxies are supported, also for HTTPS URLs (through `CONNECT`).
+Each attempt takes the next proxy from the pool, so a retry goes through a different proxy. HTTP proxies work for HTTPS URLs too (through `CONNECT`).
+
+### SOCKS proxies
+
+SOCKS4 and SOCKS5 proxies, such as Tor or an SSH tunnel (`ssh -D 1080 host`), need the optional `aiohttp-socks` package:
+
+```console
+$ python -m pip install "reqstorm[socks]"
+```
+
+```python
+reqstorm.fetch_all_sync(urls, proxy="socks5h://127.0.0.1:9050")  # Tor
+
+reqstorm.fetch_all_sync(urls, proxy="socks5://user:secret@proxy.example.com:1080")
+```
+
+| Scheme | Version | Host names are resolved by |
+|---|---|---|
+| `socks5h://` | SOCKS5 | the proxy |
+| `socks5://` | SOCKS5 | your machine |
+| `socks4a://` | SOCKS4 | the proxy |
+| `socks4://` | SOCKS4 | your machine |
+
+The "h" and "a" variants send the host name to the proxy, as curl does. Use them when the names only resolve on the proxy's side (Tor `.onion` addresses, an internal network) or when your own DNS lookups should not reveal which hosts you contact.
+
+- Username and password go in the URL. Percent-encode special characters: `p@ss` becomes `p%40ss`.
+- The port defaults to 1080.
+- SOCKS and HTTP proxies can be mixed in one pool, and `Request(proxy="socks5://...")` works per request.
+- HTTPS works through SOCKS, and the certificate is still verified against the real host.
+- Each SOCKS proxy gets its own connection pool, with the same `concurrency` and `concurrency_per_host` limits, and connections are kept alive between requests.
+- SOCKS proxies cannot be combined with `session=`, because reqstorm opens the session for each proxy itself.
 
 ## Caching and conditional requests
 

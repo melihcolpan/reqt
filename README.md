@@ -82,11 +82,11 @@ reqstorm does all of that for you, with one call.
 | One result per request | Failures are recorded, never raised; every attempt is kept |
 | Rate limits | Per host, in any unit (`"100/min"`), or `"auto"` from the server's 429s and headers |
 | Concurrency | Overall and per host |
-| Retries | Immediate, with backoff and `Retry-After`; plus end-of-run rounds |
+| Retries | Exponential backoff with a cap and jitter, `Retry-After`; plus end-of-run rounds |
 | Reports | Failures by reason, p50/p95/p99 response times, per-host figures |
 | Pagination | Next links, `Link` headers, cursors and page numbers |
 | Requests from data | URL templates over CSV rows or SQL query results |
-| Tokens and proxies | Refresh an expired token on 401; rotate through proxies |
+| Tokens and proxies | Refresh an expired token on 401; rotate through HTTP and SOCKS proxies |
 | Caching | ETag / `If-None-Match`: unchanged resources cost a 304 |
 | Output | JSONL, CSV, SQLite, PostgreSQL, MySQL; ordered or as completed |
 | Typed columns | JSON fields to checked columns, nested paths, arrays to rows |
@@ -101,7 +101,7 @@ reqstorm does all of that for you, with one call.
 $ python -m pip install reqstorm
 ```
 
-reqstorm supports Python 3.9 to 3.13 on Linux, macOS and Windows. Its only dependency is [aiohttp](https://docs.aiohttp.org). For PostgreSQL or MySQL output, install the driver you already use (`psycopg`, `psycopg2`, `pymysql`, `mysqlclient` or `mysql-connector-python`). To use Pydantic models as schemas, install `reqstorm[pydantic]`.
+reqstorm supports Python 3.9 to 3.13 on Linux, macOS and Windows. Its only dependency is [aiohttp](https://docs.aiohttp.org). For PostgreSQL or MySQL output, install the driver you already use (`psycopg`, `psycopg2`, `pymysql`, `mysqlclient` or `mysql-connector-python`). To use Pydantic models as schemas, install `reqstorm[pydantic]`; for SOCKS proxies, `reqstorm[socks]`.
 
 ## Quick start
 
@@ -265,13 +265,16 @@ results = reqstorm.fetch_all_sync(
     timeout=10,            # seconds per attempt
     retries=3,             # retry right away...
     backoff=0.5,           # ...0.5 s, 1 s, 2 s apart
+    max_backoff=30,        # never wait longer
     retry_rounds=2,        # then resend what still
     retry_round_delay=30,  # failed, 30 s later
 )
 ```
 
 - **`timeout`** is the time allowed for one attempt, including reading the body (default 30 s; `None` disables it). A slow server only fails its own requests.
-- **`retries`** retries a request right away. The delay starts at `backoff` and doubles; a `Retry-After` header (up to 60 s) takes precedence.
+- **`retries`** retries a request right away, also when no response came back at all (timeouts, dropped connections). The wait starts at `backoff` and doubles each time (0.5, 1, 2, 4, ... s), up to **`max_backoff`** (30 s by default), so many retries never wait minutes.
+- **Jitter** (on by default) waits a random time between half and all of that delay, so thousands of requests that failed together do not retry at the same moment. `jitter=False` waits exactly.
+- A **`Retry-After`** header from the server (up to 60 s) is followed as given instead.
 - **`retry_rounds`** holds back requests that still failed for a retryable reason and sends them again after the rest of the batch, for temporary outages. Each request still produces exactly one result, with all its attempts in `history`.
 
 | Retried | Not retried |
@@ -443,14 +446,16 @@ auth = reqstorm.BearerAuth(refresh=get_token)
 reqstorm.fetch_all_sync(urls, auth=auth)
 ```
 
-**Proxies.** One proxy, a pool used in turn, or one per `Request`:
+**Proxies.** One proxy, a pool used in turn, or one per `Request`. HTTP and SOCKS proxies can be mixed:
 
 ```python
 reqstorm.fetch_all_sync(urls, proxy=[
     "http://proxy-1.example.com:8080",
-    "http://proxy-2.example.com:8080",
+    "socks5h://user:pass@proxy-2.example.com:1080",
 ])
 ```
+
+SOCKS4 and SOCKS5 (`socks5h://` and `socks4a://` let the proxy resolve host names, as with Tor) need `pip install "reqstorm[socks]"`.
 
 **Caching.** `Cache` keeps responses in an SQLite file. The next run asks the server with `If-None-Match`; an unchanged resource comes back as a `304` with no body, and the stored response is used. With `ttl`, recent responses skip the network entirely:
 
