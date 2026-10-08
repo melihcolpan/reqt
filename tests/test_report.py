@@ -2,8 +2,8 @@ import json
 
 import pytest
 
-import reqt
-from reqt._limits import parse_rate
+import reqstorm
+from reqstorm._limits import parse_rate
 
 
 @pytest.mark.parametrize(
@@ -25,21 +25,21 @@ async def test_rate_limit_per_minute(server):
     import time
 
     started = time.monotonic()
-    await reqt.fetch_all([f"{server}/ok"] * 3, rate_limit="600/min")  # 10 per second
+    await reqstorm.fetch_all([f"{server}/ok"] * 3, rate_limit="600/min")  # 10 per second
     assert time.monotonic() - started >= 0.18
 
 
 async def test_history_records_every_attempt(server):
-    (result,) = await reqt.fetch_all([f"{server}/flaky?key=h&fail=2"], retries=2, backoff=0.01)
+    (result,) = await reqstorm.fetch_all([f"{server}/flaky?key=h&fail=2"], retries=2, backoff=0.01)
     assert [(a.number, a.status) for a in result.history] == [(1, 503), (2, 503), (3, 200)]
-    (failed,) = await reqt.fetch_all([f"{server}/disconnect"], retries=1, backoff=0.01)
+    (failed,) = await reqstorm.fetch_all([f"{server}/disconnect"], retries=1, backoff=0.01)
     assert [a.status for a in failed.history] == [None, None]
     assert all("ServerDisconnected" in a.to_dict()["error"] for a in failed.history)
 
 
 async def test_results_report(server):
-    results = await reqt.fetch_all([f"{server}/ok", f"{server}/status/404", "not a url", f"{server}/ok"])
-    assert isinstance(results, reqt.Results) and isinstance(results, list)
+    results = await reqstorm.fetch_all([f"{server}/ok", f"{server}/status/404", "not a url", f"{server}/ok"])
+    assert isinstance(results, reqstorm.Results) and isinstance(results, list)
     assert [r.index for r in results.succeeded] == [0, 3]
     assert [r.index for r in results.failed] == [1, 2]
     summary = results.summary()
@@ -53,7 +53,7 @@ async def test_results_report(server):
 
 
 async def test_retry_rounds_resend_failures_at_the_end(server):
-    results = await reqt.fetch_all(
+    results = await reqstorm.fetch_all(
         [f"{server}/flaky?key=rounds&fail=2", f"{server}/ok"], retry_rounds=2, retry_round_delay=0.05
     )
     flaky = results[0]
@@ -62,19 +62,21 @@ async def test_retry_rounds_resend_failures_at_the_end(server):
 
 
 async def test_retry_rounds_give_up(server):
-    (result,) = await reqt.fetch_all(
+    (result,) = await reqstorm.fetch_all(
         [f"{server}/flaky?key=giveup&fail=9"], retry_rounds=2, retry_round_delay=0
     )
     assert result.status == 503 and result.attempts == 3
 
 
 async def test_retry_rounds_skip_permanent_failures(server):
-    results = await reqt.fetch_all([f"{server}/status/404", "not a url"], retry_rounds=3, retry_round_delay=0)
+    results = await reqstorm.fetch_all(
+        [f"{server}/status/404", "not a url"], retry_rounds=3, retry_round_delay=0
+    )
     assert [r.attempts for r in results] == [1, 1]
 
 
 async def test_retries_and_rounds_combine(server):
-    (result,) = await reqt.fetch_all(
+    (result,) = await reqstorm.fetch_all(
         [f"{server}/flaky?key=both&fail=3"], retries=1, backoff=0, retry_rounds=1, retry_round_delay=0
     )
     assert result.ok and result.attempts == 4
@@ -82,7 +84,7 @@ async def test_retries_and_rounds_combine(server):
 
 async def test_callback_gets_final_results_once(server):
     seen = []
-    await reqt.fetch_all(
+    await reqstorm.fetch_all(
         [f"{server}/flaky?key=cb&fail=1"], retry_rounds=1, retry_round_delay=0, callback=seen.append
     )
     assert len(seen) == 1 and seen[0].ok
@@ -90,26 +92,28 @@ async def test_callback_gets_final_results_once(server):
 
 def test_estimate():
     assert (
-        str(reqt.estimate(7000, rate_limit="100/min"))
+        str(reqstorm.estimate(7000, rate_limit="100/min"))
         == "7000 requests: about 1h 10m (limited by rate_limit)"
     )
-    spread = reqt.estimate(7000, rate_limit="100/min", hosts=7)
+    spread = reqstorm.estimate(7000, rate_limit="100/min", hosts=7)
     assert spread.limited_by == "rate_limit" and 590 < spread.seconds < 610
-    fast = reqt.estimate(7000, concurrency=50, latency=0.3)
+    fast = reqstorm.estimate(7000, concurrency=50, latency=0.3)
     assert fast.limited_by == "concurrency" and fast.seconds == pytest.approx(42)
-    assert reqt.estimate(100, concurrency=100, concurrency_per_host=5, latency=1).seconds == pytest.approx(20)
+    assert reqstorm.estimate(
+        100, concurrency=100, concurrency_per_host=5, latency=1
+    ).seconds == pytest.approx(20)
     with pytest.raises(ValueError):
-        reqt.estimate(-1)
+        reqstorm.estimate(-1)
 
 
 async def test_progress_shows_eta(server):
     import io
 
-    from reqt._progress import Progress
+    from reqstorm._progress import Progress
 
     output = io.StringIO()
     tracker = Progress(output, total=10)
-    results = await reqt.fetch_all([f"{server}/ok"] * 2)
+    results = await reqstorm.fetch_all([f"{server}/ok"] * 2)
     for result in results:
         tracker._last_print = 0
         tracker.update(result)

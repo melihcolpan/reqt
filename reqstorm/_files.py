@@ -412,7 +412,7 @@ async def fetch_to_file(
     progress: ProgressTarget = False,
     retry_rounds: int = 0,
     retry_round_delay: float = 5.0,
-    table: str = "reqt_results",
+    table: str = "reqstorm_results",
     batch_size: int = 100,
     **options: Any,
 ) -> Summary:
@@ -501,7 +501,7 @@ async def fetch_to_db(
     urls: Iterable[Union[str, Request]],
     connection: Any,
     *,
-    table: str = "reqt_results",
+    table: str = "reqstorm_results",
     body: str = "text",
     include_headers: bool = False,
     resume: bool = False,
@@ -515,7 +515,7 @@ async def fetch_to_db(
     """Send the requests and insert one row per request into ``table``.
 
     ``connection`` is an open DB-API connection from ``sqlite3``, ``psycopg`` / ``psycopg2``
-    (PostgreSQL), or ``pymysql`` / ``MySQLdb`` / ``mysql.connector`` (MySQL). reqt does not
+    (PostgreSQL), or ``pymysql`` / ``MySQLdb`` / ``mysql.connector`` (MySQL). reqstorm does not
     close it. The table is created if it does not exist, with one column per field
     (``request_index``, ``method``, ``url``, ``status``, ``ok``, ``error``, ``attempts``,
     ``elapsed``, ``final_url``), JSON columns for ``history`` and ``headers``, ``body``,

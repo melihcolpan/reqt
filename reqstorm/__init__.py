@@ -1,10 +1,10 @@
-"""reqt: send large numbers of HTTP requests concurrently with asyncio.
+"""reqstorm: send large numbers of HTTP requests concurrently with asyncio.
 
 import asyncio
-import reqt
+import reqstorm
 
 async def main():
-    results = await reqt.fetch_all(["https://example.com", "https://example.org"])
+    results = await reqstorm.fetch_all(["https://example.com", "https://example.org"])
     for result in results:
         print(result.url, result.status if result.ok else result.error)
 

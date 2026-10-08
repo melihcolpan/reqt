@@ -34,7 +34,7 @@ def estimate(
 ) -> Estimate:
     """Estimate the duration of a batch, without sending anything.
 
-        >>> print(reqt.estimate(7000, rate_limit="100/min"))
+        >>> print(reqstorm.estimate(7000, rate_limit="100/min"))
         7000 requests: about 1h 10m (limited by rate_limit)
 
     Args:

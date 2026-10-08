@@ -1,21 +1,25 @@
-# reqt
+# reqstorm
 
-[![PyPI](https://img.shields.io/pypi/v/reqt)](https://pypi.org/project/reqt/)
-[![Python](https://img.shields.io/pypi/pyversions/reqt)](https://pypi.org/project/reqt/)
-[![CI](https://github.com/melihcolpan/reqt/actions/workflows/ci.yml/badge.svg)](https://github.com/melihcolpan/reqt/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/reqstorm)](https://pypi.org/project/reqstorm/)
+[![Python](https://img.shields.io/pypi/pyversions/reqstorm)](https://pypi.org/project/reqstorm/)
+[![CI](https://github.com/melihcolpan/reqstorm/actions/workflows/ci.yml/badge.svg)](https://github.com/melihcolpan/reqstorm/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
 
-**reqt** sends large numbers of HTTP requests concurrently and gives you one result per request, with rate limits, retries, progress and output to files or databases built in.
+**Documentation: [reqstorm.github.io](https://reqstorm.github.io)**
+
+> **reqstorm** is the new name of **reqt**. If you used reqt, see [Coming from reqt](#coming-from-reqt).
+
+**reqstorm** sends large numbers of HTTP requests concurrently and gives you one result per request, with rate limits, retries, progress and output to files or databases built in.
 
 ```python
-import reqt
+import reqstorm
 
 urls = [f"https://api.example.com/items/{i}" for i in range(7000)]
 
-print(reqt.estimate(len(urls), rate_limit="100/min"))
+print(reqstorm.estimate(len(urls), rate_limit="100/min"))
 # 7000 requests: about 1h 10m (limited by rate_limit)
 
-results = reqt.fetch_all_sync(urls, rate_limit="100/min", retries=2, progress=True)
+results = reqstorm.fetch_all_sync(urls, rate_limit="100/min", retries=2, progress=True)
 
 print(results.summary())
 # {'total': 7000, 'ok': 6987, 'failed': 13, 'failures': {'HTTP 404': 9, 'TimeoutError': 4}}
@@ -33,18 +37,18 @@ for error in results.errors():
 ## Installation
 
 ```console
-$ python -m pip install reqt
+$ python -m pip install reqstorm
 ```
 
-reqt supports Python 3.9 and newer.
+reqstorm supports Python 3.9 and newer.
 
 ## Usage
 
 Every function has an async version for code that already runs an event loop: `fetch_all`, `stream`, `fetch_to_file`, `fetch_to_db`. The blocking versions end in `_sync`. They take the same options.
 
 ```python
-results = reqt.fetch_all_sync(urls)  # in a script or a notebook
-results = await reqt.fetch_all(urls)  # inside async code
+results = reqstorm.fetch_all_sync(urls)  # in a script or a notebook
+results = await reqstorm.fetch_all(urls)  # inside async code
 ```
 
 ### Results
@@ -60,7 +64,7 @@ results = await reqt.fetch_all(urls)  # inside async code
 | `attempts`, `elapsed`, `history` | Number of attempts, total seconds, and each attempt's status, error and duration |
 | `url`, `method`, `final_url`, `index` | What was requested, where redirects ended, and its position in the input |
 
-`result.raise_for_error()` raises the request's error, or `reqt.HTTPStatusError` for a status of 400 or above. `result.to_dict()` gives the same fields as plain data.
+`result.raise_for_error()` raises the request's error, or `reqstorm.HTTPStatusError` for a status of 400 or above. `result.to_dict()` gives the same fields as plain data.
 
 The `Results` list has reporting helpers:
 
@@ -75,7 +79,7 @@ results.to_dicts()  # every result as a dict, ready for json.dump or a DataFrame
 ### Rate limits and concurrency
 
 ```python
-results = reqt.fetch_all_sync(
+results = reqstorm.fetch_all_sync(
     urls,
     rate_limit="100/min",  # per host; also 5 (per second), "10/s", "30/5min", "1000/h", (100, 60)
     concurrency=50,  # at most 50 requests in flight in total
@@ -83,12 +87,12 @@ results = reqt.fetch_all_sync(
 )
 ```
 
-The rate limit applies to each host (`host:port`) separately and counts retries too. `reqt.estimate(requests, rate_limit=..., hosts=..., concurrency=..., latency=...)` tells you how long a batch should take before you send it.
+The rate limit applies to each host (`host:port`) separately and counts retries too. `reqstorm.estimate(requests, rate_limit=..., hosts=..., concurrency=..., latency=...)` tells you how long a batch should take before you send it.
 
 ### Timeouts and retries
 
 ```python
-results = reqt.fetch_all_sync(
+results = reqstorm.fetch_all_sync(
     urls,
     timeout=10,  # seconds per attempt, including the body; None disables it
     retries=3,  # retry right away: 0.5 s, 1 s, 2 s apart (Retry-After takes precedence)
@@ -105,7 +109,7 @@ Connection errors, timeouts and the statuses in `retry_statuses` (default: 429, 
 `fetch_to_file` writes each result as soon as it is final, so results never pile up in memory:
 
 ```python
-summary = reqt.fetch_to_file_sync(urls, "results.jsonl", rate_limit="10/s", progress=True)
+summary = reqstorm.fetch_to_file_sync(urls, "results.jsonl", rate_limit="10/s", progress=True)
 print(summary.ok, summary.failed, summary.errors[:5])
 ```
 
@@ -114,7 +118,7 @@ print(summary.ok, summary.failed, summary.errors[:5])
 - **Resume:** with `resume=True`, requests already recorded as successful are skipped, and the others, including earlier failures, are sent again and appended. Without it a JSONL or CSV file is overwritten.
 - **Fields:** each record has `index`, `method`, `url`, `status`, `ok`, `error`, `attempts`, `elapsed`, `final_url`, `history` and `body`. Use `body="none"` to leave the body out, `body="base64"` for binary responses, and `include_headers=True` to add the response headers.
 
-`progress=True` prints a line such as `reqt: 3500/7000 (50%)  ok 3493  failed 7  1.7 req/s  ETA 35m 00s` to stderr.
+`progress=True` prints a line such as `reqstorm: 3500/7000 (50%)  ok 3493  failed 7  1.7 req/s  ETA 35m 00s` to stderr.
 
 ### Writing results to a database
 
@@ -124,10 +128,10 @@ print(summary.ok, summary.failed, summary.errors[:5])
 import psycopg  # or sqlite3, psycopg2, pymysql, MySQLdb, mysql.connector
 
 with psycopg.connect("dbname=crawl") as connection:
-    summary = reqt.fetch_to_db_sync(urls, connection, table="api_results", resume=True)
+    summary = reqstorm.fetch_to_db_sync(urls, connection, table="api_results", resume=True)
 ```
 
-reqt creates the table if it does not exist. The fields you filter on are real columns, and the variable parts are JSON:
+reqstorm creates the table if it does not exist. The fields you filter on are real columns, and the variable parts are JSON:
 
 | Column | PostgreSQL | MySQL | SQLite |
 |---|---|---|---|
@@ -144,13 +148,13 @@ So `SELECT url, error FROM api_results WHERE NOT ok` works directly. Rows are in
 
 ### Methods, headers and bodies
 
-Options given to `fetch_all` apply to every request. Use `reqt.Request` to vary them per request:
+Options given to `fetch_all` apply to every request. Use `reqstorm.Request` to vary them per request:
 
 ```python
-results = reqt.fetch_all_sync(
+results = reqstorm.fetch_all_sync(
     [
         "https://api.example.com/items/1",
-        reqt.Request("https://api.example.com/items", method="POST", json={"name": "new"}),
+        reqstorm.Request("https://api.example.com/items", method="POST", json={"name": "new"}),
     ],
     headers={"Authorization": "Bearer ..."},  # merged with each Request's own headers
 )
@@ -163,7 +167,7 @@ results = reqt.fetch_all_sync(
 `stream` (or `stream_sync`) yields each result as soon as it completes. `urls` can be a generator, which is read lazily, so millions of URLs never need to be in memory at once:
 
 ```python
-for result in reqt.stream_sync(read_urls_from_file(), concurrency=100):
+for result in reqstorm.stream_sync(read_urls_from_file(), concurrency=100):
     save(result.url, result.status, result.body)
 ```
 
@@ -177,51 +181,53 @@ Certificates are verified by default. To trust a private certificate authority, 
 import ssl
 
 context = ssl.create_default_context(cafile="internal-ca.pem")
-results = reqt.fetch_all_sync(urls, ssl=context)
+results = reqstorm.fetch_all_sync(urls, ssl=context)
 ```
 
 `verify_ssl=False` turns verification off. Only use it for hosts you control.
 
 ### Using your own session
 
-In async code, pass an existing `aiohttp.ClientSession` with `session=` to share cookies, connection pools or proxy settings. reqt will not close it.
+In async code, pass an existing `aiohttp.ClientSession` with `session=` to share cookies, connection pools or proxy settings. reqstorm will not close it.
 
-## Upgrading from reqt 1.x
+## Coming from reqt
 
-reqt 1.x called a function with each raw response and returned nothing. That style still works in 2.0, with a `DeprecationWarning`:
+reqstorm 2.0 is the next version of reqt, renamed because another project already uses that name. Install `reqstorm` and replace `import reqt` with `import reqstorm`. The `reqt` package on PyPI now just installs reqstorm and shows a deprecation warning, so existing code keeps working in the meantime.
+
+reqt 1.x called a function with each raw response and returned nothing. That style still works, with a `DeprecationWarning`:
 
 ```python
 async def handle(response):  # reqt 1.x
     print(response.status)
 
 
-await reqt.fetch_all(urls=urls, method=handle)
+await reqstorm.fetch_all(urls=urls, method=handle)
 ```
 
 Two things changed even in the 1.x style:
 
 - **TLS certificates are now verified.** 1.x silently skipped verification, which let anyone in the network path impersonate the server. Pass `verify_ssl=False` only if you really need the old behaviour for hosts you control.
-- **Every failed request is logged** to the `reqt` logger instead of only connection errors; other errors no longer abort the whole batch.
+- **Every failed request is logged** to the `reqstorm` logger instead of only connection errors; other errors no longer abort the whole batch.
 
 The 2.0 equivalent of the example above is:
 
 ```python
-results = await reqt.fetch_all(urls)
+results = await reqstorm.fetch_all(urls)
 for result in results:
     print(result.status)
 ```
 
-The 1.x style will be removed in reqt 3.0.
+The reqt 1.x style will be removed in reqstorm 3.0.
 
 ## Development
 
 ```console
 $ python -m pip install -e ".[test,lint]"
 $ pytest
-$ ruff check . && ruff format --check . && mypy reqt
+$ ruff check . && ruff format --check . && mypy reqstorm
 ```
 
-The tests run against a local server and need no network access. The PostgreSQL and MySQL tests run when `REQT_TEST_POSTGRES` (a libpq connection string) and `REQT_TEST_MYSQL` (`host:port:user:password:database`) are set.
+The tests run against a local server and need no network access. The PostgreSQL and MySQL tests run when `REQSTORM_TEST_POSTGRES` (a libpq connection string) and `REQSTORM_TEST_MYSQL` (`host:port:user:password:database`) are set.
 
 ## License
 

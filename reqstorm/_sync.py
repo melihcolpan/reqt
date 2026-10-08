@@ -33,7 +33,7 @@ def fetch_all_sync(urls: Iterable[Union[str, Request]], method: str = "GET", **o
 
     Takes the same options as ``fetch_all`` except ``session``, which belongs to an event loop.
 
-        results = reqt.fetch_all_sync(urls, concurrency=20, retries=2)
+        results = reqstorm.fetch_all_sync(urls, concurrency=20, retries=2)
     """
     if "session" in options:
         raise TypeError("fetch_all_sync() does not accept `session`; use fetch_all() inside your event loop")
@@ -71,7 +71,7 @@ def stream_sync(urls: Iterable[Union[str, Request]], method: str = "GET", **opti
     The requests run on an event loop in a background thread. Leaving the loop early
     (``break``) stops the remaining requests.
 
-        for result in reqt.stream_sync(urls, concurrency=50):
+        for result in reqstorm.stream_sync(urls, concurrency=50):
             print(result.url, result.status)
     """
     if "session" in options:
@@ -111,7 +111,7 @@ def stream_sync(urls: Iterable[Union[str, Request]], method: str = "GET", **opti
             loop.run_until_complete(loop.shutdown_asyncgens())
             loop.close()
 
-    thread = threading.Thread(target=run, name="reqt-stream", daemon=True)
+    thread = threading.Thread(target=run, name="reqstorm-stream", daemon=True)
     thread.start()
     try:
         while True:

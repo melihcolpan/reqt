@@ -3,7 +3,7 @@ requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "reqt"
+name = "reqstorm"
 dynamic = ["version"]
 description = "Send large numbers of HTTP requests concurrently with asyncio, with retries, timeouts and per-request results."
 readme = "README.md"
@@ -12,7 +12,7 @@ license-files = ["LICENSE"]
 authors = [{ name = "Melih Colpan", email = "melihcolpan1@gmail.com" }]
 requires-python = ">=3.9"
 dependencies = ["aiohttp>=3.9,<4"]
-keywords = ["asyncio", "aiohttp", "http", "requests", "concurrent", "crawler"]
+keywords = ["asyncio", "aiohttp", "http", "requests", "concurrent", "bulk", "rate-limit", "retry", "crawler", "scraping"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Framework :: AsyncIO",
@@ -34,18 +34,19 @@ test = ["pytest>=8", "pytest-asyncio>=0.23", "trustme>=1.1"]
 lint = ["ruff>=0.6", "mypy>=1.10"]
 
 [project.urls]
-Homepage = "https://github.com/melihcolpan/reqt"
-Changelog = "https://github.com/melihcolpan/reqt/blob/master/CHANGELOG.md"
-Issues = "https://github.com/melihcolpan/reqt/issues"
+Homepage = "https://reqstorm.github.io"
+Source = "https://github.com/melihcolpan/reqstorm"
+Changelog = "https://github.com/melihcolpan/reqstorm/blob/master/CHANGELOG.md"
+Issues = "https://github.com/melihcolpan/reqstorm/issues"
 
 [tool.setuptools]
-packages = ["reqt"]
+packages = ["reqstorm"]
 
 [tool.setuptools.dynamic]
-version = { attr = "reqt.__version__" }
+version = { attr = "reqstorm.__version__" }
 
 [tool.setuptools.package-data]
-reqt = ["py.typed"]
+reqstorm = ["py.typed"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
