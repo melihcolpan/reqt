@@ -3,6 +3,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+from contextlib import closing
 
 import pytest
 
@@ -50,7 +51,7 @@ def test_template_csv_to_sqlite_with_schema_file(thread_server, tmp_path, capsys
     code = main([str(rows), "--template", thread_server + "/echo?id={id}", "--schema", str(schema),
                  "-o", str(target), "--table", "echoes", "-q"])  # fmt: skip
     assert code == 0
-    with sqlite3.connect(target) as connection:
+    with closing(sqlite3.connect(target)) as connection:
         assert connection.execute("SELECT key, method FROM echoes ORDER BY key").fetchall() == [
             (1, '"GET"'), (2, '"GET"')
         ]  # fmt: skip

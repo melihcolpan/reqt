@@ -224,6 +224,15 @@ def _rate(text: Optional[str]) -> Any:
 
 
 def _run(args: argparse.Namespace) -> int:
+    cache = Cache(args.cache, ttl=args.cache_ttl) if args.cache and not args.estimate else None
+    try:
+        return _batch(args, cache)
+    finally:
+        if cache is not None:
+            cache.close()
+
+
+def _batch(args: argparse.Namespace, cache: Optional[Cache]) -> int:
     rate = _rate(args.rate)
     if args.estimate:
         total = _count(args)
@@ -254,7 +263,7 @@ def _run(args: argparse.Namespace) -> int:
         verify_ssl=not args.no_verify,
         rate_limit=rate,
         auth=BearerAuth(token) if token else None,
-        cache=Cache(args.cache, ttl=args.cache_ttl) if args.cache else None,
+        cache=cache,
         proxy=args.proxy or None,
         paginate=_paginator(args.paginate, args.max_pages),
     )

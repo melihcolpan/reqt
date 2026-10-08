@@ -44,9 +44,9 @@ Each attempt takes the next proxy from the pool, so a retry goes through a diffe
 `Cache` keeps successful GET responses in an SQLite file. On the next run, reqstorm sends `If-None-Match` (with the stored `ETag`) and `If-Modified-Since`; when the server answers `304 Not Modified`, the stored response is used and no body is downloaded:
 
 ```python
-cache = reqstorm.Cache("responses.sqlite")
-results = reqstorm.fetch_all_sync(urls, cache=cache)
-print(cache.revalidated, "unchanged")
+with reqstorm.Cache("responses.sqlite") as cache:
+    results = reqstorm.fetch_all_sync(urls, cache=cache)
+    print(cache.revalidated, "unchanged")
 ```
 
 With `ttl`, a response younger than that many seconds is used without asking the server at all:
@@ -58,4 +58,4 @@ cache = reqstorm.Cache("responses.sqlite", ttl=3600)  # one hour
 - Results served from the cache have `from_cache=True`; their `history` shows the 304, or is empty when no request was made.
 - Only `GET` and `HEAD` responses with status 200 are stored.
 - The cache key is the method, the URL, the query parameters and the `Accept`, `Accept-Language` and `Authorization` headers.
-- `cache.clear()` empties the cache.
+- `cache.clear()` empties the cache; `cache.close()` (or leaving the `with` block) closes the file.

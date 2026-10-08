@@ -1,5 +1,6 @@
 import json
 import sqlite3
+from contextlib import closing
 
 import pytest
 
@@ -82,7 +83,7 @@ async def test_pagination_with_schema_and_explode_to_a_database(server, tmp_path
         paginate=reqstorm.NextLink("links.next"),
     )  # fmt: skip
     assert summary.ok == 3 and summary.rows == 7
-    with sqlite3.connect(target) as connection:
+    with closing(sqlite3.connect(target)) as connection:
         rows = connection.execute("SELECT id, source_index FROM items ORDER BY id").fetchall()
     assert rows == [(number, 0) for number in range(1, 8)]
 

@@ -455,8 +455,8 @@ reqstorm.fetch_all_sync(urls, proxy=[
 **Caching.** `Cache` keeps responses in an SQLite file. The next run asks the server with `If-None-Match`; an unchanged resource comes back as a `304` with no body, and the stored response is used. With `ttl`, recent responses skip the network entirely:
 
 ```python
-cache = reqstorm.Cache("responses.sqlite")
-reqstorm.fetch_all_sync(urls, cache=cache)
+with reqstorm.Cache("responses.sqlite") as cache:
+    reqstorm.fetch_all_sync(urls, cache=cache)
 ```
 
 ## Requests, headers and bodies
