@@ -45,3 +45,15 @@ def test_stream_sync_raises_input_errors(thread_server):
 def test_session_is_rejected():
     with pytest.raises(TypeError, match="session"):
         reqt.fetch_all_sync(["http://example.invalid"], session=object())
+
+
+def test_stream_sync_input_error_is_not_masked_on_shutdown(thread_server):
+    # The background loop may close while the consumer is still cleaning up;
+    # the input's own error must still be the one raised.
+    def urls():
+        yield f"{thread_server}/ok"
+        raise RuntimeError("bad input")
+
+    for _ in range(30):
+        with pytest.raises(RuntimeError, match="bad input"):
+            list(reqt.stream_sync(urls()))
