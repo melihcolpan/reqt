@@ -1,0 +1,66 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "reqt"
+dynamic = ["version"]
+description = "Send large numbers of HTTP requests concurrently with asyncio, with retries, timeouts and per-request results."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Melih Colpan", email = "melihcolpan1@gmail.com" }]
+requires-python = ">=3.9"
+dependencies = ["aiohttp>=3.9,<4"]
+keywords = ["asyncio", "aiohttp", "http", "requests", "concurrent", "crawler"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Framework :: AsyncIO",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Internet :: WWW/HTTP",
+    "Typing :: Typed",
+]
+
+[project.optional-dependencies]
+test = ["pytest>=8", "pytest-asyncio>=0.23", "trustme>=1.1"]
+lint = ["ruff>=0.6", "mypy>=1.10"]
+
+[project.urls]
+Homepage = "https://github.com/melihcolpan/reqt"
+Changelog = "https://github.com/melihcolpan/reqt/blob/master/CHANGELOG.md"
+Issues = "https://github.com/melihcolpan/reqt/issues"
+
+[tool.setuptools]
+packages = ["reqt"]
+
+[tool.setuptools.dynamic]
+version = { attr = "reqt.__version__" }
+
+[tool.setuptools.package-data]
+reqt = ["py.typed"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+filterwarnings = ["error"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py39"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "ASYNC"]
+# Optional[...] / List[...] are kept for Python 3.9 support
+ignore = ["UP006", "UP007", "UP035", "UP045"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+warn_unused_ignores = true
