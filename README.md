@@ -1,7 +1,7 @@
 # reqstorm
 
-[![PyPI](https://img.shields.io/pypi/v/reqstorm)](https://pypi.org/project/reqstorm/)
-[![Python](https://img.shields.io/pypi/pyversions/reqstorm)](https://pypi.org/project/reqstorm/)
+[![PyPI](https://img.shields.io/pypi/v/reqstorm?logo=pypi&logoColor=white)](https://pypi.org/project/reqstorm/)
+[![Python](https://img.shields.io/pypi/pyversions/reqstorm?logo=python&logoColor=white)](https://pypi.org/project/reqstorm/)
 [![CI](https://github.com/melihcolpan/reqstorm/actions/workflows/ci.yml/badge.svg)](https://github.com/melihcolpan/reqstorm/actions/workflows/ci.yml)
 [![Docs](https://img.shields.io/badge/docs-reqstorm.github.io-5b50e0)](https://reqstorm.github.io)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
