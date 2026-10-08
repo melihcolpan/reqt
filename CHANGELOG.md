@@ -1,5 +1,10 @@
 # Changelog
 
+## 2.4.1
+
+### Fixed
+- A SOCKS proxy that cannot be reached, times out or refuses a connection is now a retryable error, like an HTTP proxy failure already was. With `retries` and a proxy pool, the next attempt goes through the next proxy instead of the request failing on the first one. aiohttp-socks raises its own exception classes, which were not recognised before.
+
 ## 2.4.0
 
 ### Added
