@@ -1,8 +1,14 @@
 # Changelog
 
-## 2.0.0
+## 2.0.1
 
-reqt is renamed to **reqstorm**, because another project already uses the reqt name. This release has the same features as reqt 2.0.0. The `reqt` package on PyPI (2.0.1) now installs reqstorm and re-exports it with a deprecation warning.
+First release as **reqstorm**. reqt is renamed because another project already uses the reqt name.
+
+- Same features as reqt 2.0.0; `import reqt` becomes `import reqstorm`.
+- The `reqt` package on PyPI (2.0.1) now installs reqstorm and re-exports it with a deprecation warning.
+- Documentation site at [reqstorm.github.io](https://reqstorm.github.io).
+
+## 2.0.0 (released as reqt)
 
 ### Added
 - `fetch_all` returns a `Result` per request, in input order, with `status`, `headers`, `body`, `text()`, `json()`, `error`, `attempts` and `elapsed`.
