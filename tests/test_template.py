@@ -51,6 +51,7 @@ def test_read_sql_in_batches():
     connection.execute("CREATE TABLE users (id INTEGER, name TEXT)")
     connection.executemany("INSERT INTO users VALUES (?, ?)", [(n, f"u{n}") for n in range(5)])
     rows = list(reqstorm.read_sql(connection, "SELECT id, name FROM users WHERE id > ?", (1,), batch_size=2))
+    connection.close()
     assert rows == [{"id": 2, "name": "u2"}, {"id": 3, "name": "u3"}, {"id": 4, "name": "u4"}]
 
 

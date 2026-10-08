@@ -1,6 +1,7 @@
 import json
 import sqlite3
 import sys
+from contextlib import closing
 from datetime import datetime
 from typing import List, Optional
 
@@ -76,7 +77,7 @@ async def test_model_as_schema_to_sqlite(server, tmp_path):
         schema=Product, explode="items", rejects_table="rejected",
     )  # fmt: skip
     assert summary.rows == 1 and summary.rejected == 1
-    with sqlite3.connect(target) as connection:
+    with closing(sqlite3.connect(target)) as connection:
         assert connection.execute("SELECT id, name, price, tags, page FROM products").fetchall() == [
             (1, "Kettle", 12.5, '["home"]', 2)
         ]

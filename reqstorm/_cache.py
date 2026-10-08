@@ -47,10 +47,10 @@ class Cache:
             unchanged resource costs a 304 with no body. ``0`` behaves the same.
 
     Only GET and HEAD responses with status 200 are cached. A result served from the cache
-    has ``from_cache=True``.
+    has ``from_cache=True``. Close the cache when done, or use it in a ``with`` block.
 
-        cache = reqstorm.Cache("responses.sqlite", ttl=3600)
-        reqstorm.fetch_all_sync(urls, cache=cache)
+        with reqstorm.Cache("responses.sqlite", ttl=3600) as cache:
+            reqstorm.fetch_all_sync(urls, cache=cache)
     """
 
     def __init__(
@@ -126,6 +126,12 @@ class Cache:
     def close(self) -> None:
         with self._lock:
             self._connection.close()
+
+    def __enter__(self) -> Cache:
+        return self
+
+    def __exit__(self, *exc_info: Any) -> None:
+        self.close()
 
     def __bool__(self) -> bool:
         return True  # an empty cache is still a cache
