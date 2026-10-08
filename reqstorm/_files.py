@@ -37,6 +37,10 @@ class Summary:
     skipped: int
     elapsed: float
     errors: List[Dict[str, Any]] = field(default_factory=list)
+    rows: int = 0
+    """With a schema: rows written."""
+    rejected: int = 0
+    """With a schema: records rejected because a field was missing or had the wrong type."""
 
 
 class _Sink:
@@ -321,6 +325,7 @@ async def _run_to_sink(
     retry_round_delay: float,
     batch_size: int,
     options: Dict[str, Any],
+    schema: Any = None,
 ) -> Summary:
     if body not in ("text", "base64", "none", "bytes"):
         raise ValueError("body must be 'text', 'base64', 'bytes' or 'none'")
@@ -363,11 +368,28 @@ async def _run_to_sink(
         progress, total=None if total is None else total - len(done) if resume else total
     )
     started = time.monotonic()
-    ok = failed = 0
+    ok = failed = rows = rejected = 0
     errors: List[Dict[str, Any]] = []
     writer = _Writer(sink, ordered=ordered, batch_size=batch_size)
     try:
         async for result in _execute(pending(), retry_rounds, retry_round_delay, options):
+            if schema is not None:
+                item = _schema_item(result, positions[result.index], schema)
+                await writer.add(result.index, item)
+                rows += len(item["rows"])
+                rejected += len(item["rejects"]) if result.ok else 0
+                if result.ok:
+                    ok += 1
+                else:
+                    failed += 1
+                for entry in item["rejects"]:
+                    errors.append(
+                        {"index": item["position"], "method": item["method"], "url": item["url"],
+                         "status": result.status, "reasons": entry["reasons"]}
+                    )  # fmt: skip
+                if tracker is not None:
+                    tracker.update(result)
+                continue
             record = _record(result, positions[result.index], body, include_headers)
             await writer.add(result.index, record)
             if result.ok:
@@ -389,7 +411,29 @@ async def _run_to_sink(
         skipped=skipped,
         elapsed=time.monotonic() - started,
         errors=errors,
+        rows=rows,
+        rejected=rejected,
     )
+
+
+def _schema_item(result: Result, position: int, schema: Any) -> Dict[str, Any]:
+    """The rows and rejected records of one response, for a schema sink."""
+    from ._schema import parse_json
+
+    item: Dict[str, Any] = {"position": position, "method": result.method, "url": result.url, "rows": [],
+                            "rejects": []}  # fmt: skip
+    if not result.ok:
+        reason = (
+            f"request failed: {result.error!r}" if result.error else f"request failed: HTTP {result.status}"
+        )
+        item["rejects"].append({"reasons": [reason], "record": None})
+        return item
+    document, problem = parse_json(result.body)
+    if problem is not None:
+        item["rejects"].append({"reasons": [problem], "record": result.text()[:1000]})
+        return item
+    item["rows"], item["rejects"] = schema.rows(document)
+    return item
 
 
 def _record(result: Result, position: int, body: str, include_headers: bool) -> Dict[str, Any]:
@@ -414,6 +458,10 @@ async def fetch_to_file(
     retry_round_delay: float = 5.0,
     table: str = "reqstorm_results",
     batch_size: int = 100,
+    schema: Any = None,
+    explode: Optional[str] = None,
+    rejects_table: Optional[str] = None,
+    include_source: bool = True,
     **options: Any,
 ) -> Summary:
     """Send the requests and write one record per request to ``path`` as soon as it is final.
@@ -438,6 +486,13 @@ async def fetch_to_file(
         retry_round_delay: Seconds to wait before each retry round.
         table: Table name for SQLite output.
         batch_size: Records written per batch.
+        schema: Write typed fields parsed from each JSON response instead of the raw
+            response: a dict of column name to ``reqstorm.Field``, or a ``reqstorm.Schema``.
+            See ``fetch_to_db`` and the "Structured data" guide.
+        explode: With a schema, path to an array in each response; every element becomes a row.
+        rejects_table: With a schema and SQLite output, also write rejected records to this table.
+        include_source: With a schema, add ``source_index``, ``source_method`` and
+            ``source_url`` to each row (needed for ``resume``).
         options: Any other option of ``fetch_all``, such as ``method``, ``concurrency``,
             ``timeout``, ``retries`` or ``rate_limit``.
 
@@ -455,6 +510,40 @@ async def fetch_to_file(
         raise ValueError("format must be 'jsonl', 'csv' or 'sqlite'")
     if body == "bytes" and format != "sqlite":
         raise ValueError("body='bytes' needs a database; use 'text' or 'base64' for files")
+
+    if schema is not None:
+        from ._schema import as_schema
+        from ._schema_sinks import SchemaCsvSink, SchemaDatabaseSink, SchemaJsonlSink
+
+        parsed = as_schema(schema, explode)
+        if rejects_table is not None and format != "sqlite":
+            raise ValueError("rejects_table needs SQLite output; for files, see Summary.errors")
+
+        def make_schema_sink() -> _Sink:
+            if format == "sqlite":
+                connection = sqlite3.connect(path, check_same_thread=False)
+                try:
+                    return SchemaDatabaseSink(connection, table, parsed, rejects_table=rejects_table,
+                                              include_source=include_source, close=True)  # fmt: skip
+                except BaseException:
+                    connection.close()
+                    raise
+            if format == "csv":
+                return SchemaCsvSink(path, append=resume, schema=parsed, include_source=include_source)
+            return SchemaJsonlSink(path, append=resume, include_source=include_source)
+
+        def read_schema_completed() -> Set[Tuple[str, str]]:
+            if format == "csv":
+                return SchemaCsvSink.read_completed(path)
+            if format == "jsonl":
+                return SchemaJsonlSink.read_completed(path)
+            return set()
+
+        return await _run_to_sink(
+            urls, make_schema_sink, read_schema_completed, path, body=body, include_headers=False,
+            resume=resume, ordered=ordered, progress=progress, retry_rounds=retry_rounds,
+            retry_round_delay=retry_round_delay, batch_size=batch_size, options=options, schema=parsed,
+        )  # fmt: skip
 
     if format == "sqlite":
 
@@ -511,6 +600,10 @@ async def fetch_to_db(
     retry_rounds: int = 0,
     retry_round_delay: float = 5.0,
     batch_size: int = 100,
+    schema: Any = None,
+    explode: Optional[str] = None,
+    rejects_table: Optional[str] = None,
+    include_source: bool = True,
     **options: Any,
 ) -> Summary:
     """Send the requests and insert one row per request into ``table``.
@@ -526,7 +619,33 @@ async def fetch_to_db(
     Existing rows are never deleted. With ``resume=True``, requests that already have a
     successful row are skipped. ``body="bytes"`` stores the raw body as a binary column.
     The other arguments are as for ``fetch_to_file``.
+
+    With ``schema``, each JSON response is turned into typed rows instead: one column per
+    field (``BIGINT``, ``DOUBLE PRECISION``, ``TEXT``, ``BOOLEAN``, ``TIMESTAMPTZ`` or
+    ``JSONB`` in PostgreSQL, and their equivalents), plus ``source_index``,
+    ``source_method`` and ``source_url`` unless ``include_source=False``. ``explode``
+    turns each element of an array into a row. Records with a missing required field or
+    a value of the wrong type (including NaN and Infinity) are not written: they are
+    listed in ``Summary.errors`` and, with ``rejects_table``, written to that table with
+    their reasons. Fields marked ``key=True`` form the primary key, and a record whose
+    key already exists updates that row. An existing table must already have the columns.
     """
+    if schema is not None:
+        from ._schema import as_schema
+        from ._schema_sinks import SchemaDatabaseSink
+
+        parsed = as_schema(schema, explode)
+
+        def make_schema_sink() -> _Sink:
+            return SchemaDatabaseSink(connection, table, parsed, rejects_table=rejects_table,
+                                      include_source=include_source, close=False)  # fmt: skip
+
+        return await _run_to_sink(
+            urls, make_schema_sink, set, f"{_dialect_for(connection).name}:{table}", body=body,
+            include_headers=False, resume=resume, ordered=ordered, progress=progress,
+            retry_rounds=retry_rounds, retry_round_delay=retry_round_delay, batch_size=batch_size,
+            options=options, schema=parsed,
+        )  # fmt: skip
 
     def make_sink() -> _Sink:
         return _DatabaseSink(connection, table, body, include_headers, close=False)
