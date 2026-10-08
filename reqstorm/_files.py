@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import concurrent.futures
 import csv
+import io
 import json as jsonlib
 import os
 import re
@@ -14,7 +15,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Set, Tuple, Union
 
 from ._client import Request, Result, _execute
-from ._progress import Progress, ProgressTarget
+from ._observe import ProgressTarget, Run, describe
 
 __all__ = ["Summary", "fetch_to_db", "fetch_to_file"]
 
@@ -43,6 +44,8 @@ class Summary:
     """With a schema: records rejected because a field was missing or had the wrong type."""
     report: Dict[str, Any] = field(default_factory=dict)
     """Response times, statuses, errors and per-host figures, as ``Results.report()``."""
+    log_file: Optional[str] = None
+    """The log file of this run, when ``log_file=`` was given."""
 
 
 class _Sink:
@@ -85,8 +88,8 @@ class _JsonlSink(_Sink):
         return done
 
     def write(self, records: List[Dict[str, Any]]) -> None:
-        for record in records:
-            self.file.write(jsonlib.dumps(record, ensure_ascii=False) + "\n")
+        # One write per batch, so a reader never sees half a line
+        self.file.write("".join(jsonlib.dumps(record, ensure_ascii=False) + "\n" for record in records))
         self.file.flush()
 
     def close(self) -> None:
@@ -116,12 +119,15 @@ class _CsvSink(_Sink):
         return done
 
     def write(self, records: List[Dict[str, Any]]) -> None:
+        buffer = io.StringIO()
+        writer = csv.DictWriter(buffer, fieldnames=self.writer.fieldnames, extrasaction="ignore")
         for record in records:
             row = dict(record)
             for key in ("history", "headers"):
                 if key in row:
                     row[key] = jsonlib.dumps(row[key], ensure_ascii=False)
-            self.writer.writerow(row)
+            writer.writerow(row)
+        self.file.write(buffer.getvalue())  # one write per batch, so a reader never sees half a row
         self.file.flush()
 
     def close(self) -> None:
@@ -267,7 +273,12 @@ def _missing_final_newline(path: str) -> bool:
 
 
 class _Writer:
-    """Batches records, keeps them in input order if asked, and runs blocking writes off the loop."""
+    """Batches records, keeps them in input order if asked, and runs blocking writes off the loop.
+
+    A batch is written when it holds ``batch_size`` records, and at least every
+    ``flush_interval`` seconds while records are waiting, even when no new result arrives
+    (for example while a host is paused), so readers of the output never fall far behind.
+    """
 
     def __init__(self, sink: _Sink, ordered: bool, batch_size: int, flush_interval: float = 1.0) -> None:
         self.sink = sink
@@ -277,8 +288,18 @@ class _Writer:
         self.batch: List[Dict[str, Any]] = []
         self.waiting: Dict[int, Dict[str, Any]] = {}
         self.next_index = 0
-        self.last_flush = time.monotonic()
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=1) if sink.offload else None
+        self._lock = asyncio.Lock()
+        self._timer: Optional[asyncio.Task] = None
+
+    def start(self) -> None:
+        if self.flush_interval > 0:
+            self._timer = asyncio.ensure_future(self._flush_periodically())
+
+    async def _flush_periodically(self) -> None:
+        while True:
+            await asyncio.sleep(self.flush_interval)
+            await self.flush()
 
     async def add(self, position: int, record: Dict[str, Any]) -> None:
         if self.ordered:
@@ -288,20 +309,26 @@ class _Writer:
                 self.next_index += 1
         else:
             self.batch.append(record)
-        if len(self.batch) >= self.batch_size or time.monotonic() - self.last_flush >= self.flush_interval:
+        if len(self.batch) >= self.batch_size or self.flush_interval == 0:
             await self.flush()
 
     async def flush(self) -> None:
-        if not self.batch:
-            return
-        batch, self.batch = self.batch, []
-        self.last_flush = time.monotonic()
-        if self.executor is not None:
-            await asyncio.get_running_loop().run_in_executor(self.executor, self.sink.write, batch)
-        else:
-            self.sink.write(batch)
+        async with self._lock:
+            if not self.batch:
+                return
+            batch, self.batch = self.batch, []
+            if self.executor is not None:
+                await asyncio.get_running_loop().run_in_executor(self.executor, self.sink.write, batch)
+            else:
+                self.sink.write(batch)
 
     async def close(self) -> None:
+        if self._timer is not None:
+            self._timer.cancel()
+            try:
+                await self._timer
+            except asyncio.CancelledError:
+                pass
         try:
             await self.flush()
         finally:
@@ -310,6 +337,16 @@ class _Writer:
                 self.executor.shutdown()
             else:
                 self.sink.close()
+
+
+def _open_sqlite(path: str) -> sqlite3.Connection:
+    """An SQLite file for output. WAL mode lets other programs read it while it is written."""
+    connection = sqlite3.connect(path, check_same_thread=False, timeout=30)
+    try:
+        connection.execute("PRAGMA journal_mode=WAL")
+    except sqlite3.DatabaseError:
+        pass  # some file systems (network shares) do not support WAL; keep the default mode
+    return connection
 
 
 async def _run_to_sink(
@@ -345,11 +382,29 @@ async def _run_to_sink(
             "second run updates rows instead of duplicating them."
         )
 
-    sink: _Sink = make_sink()
+    # Check every option before the output is opened, so a mistake leaves nothing open
+    flush_interval = float(options.pop("flush_interval", 1.0))
+    if flush_interval < 0:
+        raise ValueError("flush_interval must not be negative")
+    run = Run(
+        total=None,
+        progress=progress,
+        log_level=options.pop("log_level", None),
+        log_file=options.pop("log_file", None),
+        log_format=options.pop("log_format", "text"),
+    )
+    options["_run"] = run
+
+    try:
+        sink: _Sink = make_sink()
+    except BaseException:
+        await run.finish()  # closes a log file opened for this run
+        raise
     try:
         done = (sink.completed() or read_completed()) if resume else set()
     except BaseException:
         sink.close()
+        await run.finish()
         raise
     skipped = 0
     positions: List[int] = []  # index in `urls` of each request actually sent
@@ -367,21 +422,26 @@ async def _run_to_sink(
             positions.append(position)
             yield request
 
-    total: Optional[int] = None
-    try:
-        total = len(urls)  # type: ignore[arg-type]
-    except TypeError:
-        pass
-    tracker = Progress.create(
-        progress, total=None if total is None else total - len(done) if resume else total
-    )
+    total: Optional[int] = options.pop("total", None)
+    if total is None:
+        try:
+            total = len(urls)  # type: ignore[arg-type]
+        except TypeError:
+            pass
+    if options.get("paginate") is not None:
+        total = None  # pages are not known in advance
+    run.total = None if total is None else total - len(done) if resume else total
     started = time.monotonic()
     from ._report import Report
 
     ok = failed = rows = rejected = 0
     errors: List[Dict[str, Any]] = []
     report = Report()
-    writer = _Writer(sink, ordered=ordered, batch_size=batch_size)
+    writer = _Writer(sink, ordered=ordered, batch_size=batch_size, flush_interval=flush_interval)
+    writer.start()
+    run.start(describe(concurrency=options.get("concurrency", 100), rate_limit=options.get("rate_limit"),
+                       retries=options.get("retries"), retry_rounds=retry_rounds, output=target,
+                       skipped=len(done) if resume else 0))  # fmt: skip
     try:
         async for result in _execute(pending(), retry_rounds, retry_round_delay, options):
             report.add(result)
@@ -396,12 +456,11 @@ async def _run_to_sink(
                 else:
                     failed += 1
                 for entry in item["rejects"]:
+                    run.rejected(item["url"], entry["reasons"])
                     errors.append(
                         {"index": item["position"], "method": item["method"], "url": item["url"],
                          "status": result.status, "reasons": entry["reasons"]}
                     )  # fmt: skip
-                if tracker is not None:
-                    tracker.update(result)
                 continue
             record = _record(result, position, body, include_headers)
             await writer.add(result.index, record)
@@ -410,12 +469,11 @@ async def _run_to_sink(
             else:
                 failed += 1
                 errors.append({key: value for key, value in record.items() if key != "body"})
-            if tracker is not None:
-                tracker.update(result)
     finally:
-        await writer.close()
-    if tracker is not None:
-        tracker.close()
+        try:
+            await writer.close()
+        finally:
+            await run.finish()
     return Summary(
         target=target,
         total=ok + failed,
@@ -427,6 +485,7 @@ async def _run_to_sink(
         rows=rows,
         rejected=rejected,
         report=report.as_dict(),
+        log_file=run.log_file,
     )
 
 
@@ -472,6 +531,7 @@ async def fetch_to_file(
     retry_round_delay: float = 5.0,
     table: str = "reqstorm_results",
     batch_size: int = 100,
+    flush_interval: float = 1.0,
     schema: Any = None,
     explode: Optional[str] = None,
     rejects_table: Optional[str] = None,
@@ -495,11 +555,15 @@ async def fetch_to_file(
         ordered: Write records in input order. By default they are written as they complete.
             Ordered output holds back records that finish early until the ones before them
             are done, so it uses more memory when a few requests are slow.
-        progress: ``True`` to print progress to stderr, or a text stream to print it to.
+        progress: As for ``fetch_all``: a progress line, a stream, or a function.
         retry_rounds: As for ``fetch_all``; each request still gets one record.
         retry_round_delay: Seconds to wait before each retry round.
         table: Table name for SQLite output.
-        batch_size: Records written per batch.
+        batch_size: Write as soon as this many records are waiting.
+        flush_interval: And at least every this many seconds while records are waiting
+            (default 1), even when no request finishes, so other programs reading the
+            output are never more than about a second behind. ``0`` writes every record
+            at once. SQLite files are opened in WAL mode so they can be read meanwhile.
         schema: Write typed fields parsed from each JSON response instead of the raw
             response: a dict of column name to ``reqstorm.Field``, a ``reqstorm.Schema``, or a
             Pydantic v2 model (``pip install reqstorm[pydantic]``).
@@ -515,6 +579,7 @@ async def fetch_to_file(
     ``error``, ``attempts``, ``elapsed``, ``final_url`` and ``history`` (every attempt).
     Returns a ``Summary`` whose ``errors`` lists the failed records.
     """
+    options["flush_interval"] = flush_interval
     path = os.fspath(path)
     if format is None:
         lowered = path.lower()
@@ -536,7 +601,7 @@ async def fetch_to_file(
 
         def make_schema_sink() -> _Sink:
             if format == "sqlite":
-                connection = sqlite3.connect(path, check_same_thread=False)
+                connection = _open_sqlite(path)
                 try:
                     return SchemaDatabaseSink(connection, table, parsed, rejects_table=rejects_table,
                                               include_source=include_source, close=True)  # fmt: skip
@@ -563,7 +628,7 @@ async def fetch_to_file(
     if format == "sqlite":
 
         def make_sink() -> _Sink:
-            connection = sqlite3.connect(path, check_same_thread=False)
+            connection = _open_sqlite(path)
             return _DatabaseSink(connection, table, body, include_headers, close=True)
 
         read_completed: Any = set
@@ -615,6 +680,7 @@ async def fetch_to_db(
     retry_rounds: int = 0,
     retry_round_delay: float = 5.0,
     batch_size: int = 100,
+    flush_interval: float = 1.0,
     schema: Any = None,
     explode: Optional[str] = None,
     rejects_table: Optional[str] = None,
@@ -633,7 +699,8 @@ async def fetch_to_db(
 
     Existing rows are never deleted. With ``resume=True``, requests that already have a
     successful row are skipped. ``body="bytes"`` stores the raw body as a binary column.
-    The other arguments are as for ``fetch_to_file``.
+    Rows are committed per batch and at least every ``flush_interval`` seconds. The other
+    arguments, including logging, are as for ``fetch_to_file`` and ``fetch_all``.
 
     With ``schema``, each JSON response is turned into typed rows instead: one column per
     field (``BIGINT``, ``DOUBLE PRECISION``, ``TEXT``, ``BOOLEAN``, ``TIMESTAMPTZ`` or
@@ -645,6 +712,7 @@ async def fetch_to_db(
     their reasons. Fields marked ``key=True`` form the primary key, and a record whose
     key already exists updates that row. An existing table must already have the columns.
     """
+    options["flush_interval"] = flush_interval
     if schema is not None:
         from ._schema import as_schema
         from ._schema_sinks import SchemaDatabaseSink

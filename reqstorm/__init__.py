@@ -26,13 +26,14 @@ from ._client import (
 from ._files import Summary, fetch_to_db, fetch_to_file
 from ._legacy import Reqt
 from ._limits import parse_rate
+from ._observe import ProgressInfo
 from ._paginate import Cursor, LinkHeader, NextLink, PageNumber, Paginator
 from ._plan import Estimate, estimate
 from ._schema import Field, Schema, SchemaError, extract, infer_schema
 from ._sync import fetch_all_sync, fetch_to_db_sync, fetch_to_file_sync, stream_sync
 from ._template import from_template, read_csv, read_sql
 
-__version__ = "2.3.0"
+__version__ = "2.4.0"
 
 __all__ = [
     "Attempt",
@@ -46,6 +47,7 @@ __all__ = [
     "LinkHeader",
     "NextLink",
     "PageNumber",
+    "ProgressInfo",
     "Paginator",
     "Reqt",
     "Request",
