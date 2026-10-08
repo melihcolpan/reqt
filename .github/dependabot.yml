@@ -11,3 +11,6 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # reqt is a library: keep the dependency ranges wide and only widen them when a
+    # new release falls outside, instead of raising the minimum to the latest version.
+    versioning-strategy: increase-if-necessary
