@@ -48,10 +48,11 @@ $ reqstorm urls.txt -o results.jsonl --report
 | `-X`, `-H 'Name: value'`, `--json`, `--data` | Method, headers and body for every request |
 | `--template URL` | Treat the input as CSV and fill `{column}` placeholders from each row |
 | `--bearer TOKEN` | Send `Authorization: Bearer TOKEN`; the `REQSTORM_TOKEN` environment variable works too, and keeps the token out of your shell history |
-| `--proxy URL` | Send through a proxy; repeat the option to rotate through several |
+| `--proxy URL` | Send through a proxy (`http://`, `socks5://`, `socks5h://`, `socks4://`, `socks4a://`); repeat the option to rotate through several |
 | `--rate` | Per-host rate limit: `5`, `10/s`, `100/min`, `1000/h`, or `auto` |
 | `-c`, `--per-host` | Concurrency in total and per host |
-| `--timeout`, `--retries`, `--backoff` | Per attempt timeout, retries and backoff |
+| `--timeout`, `--retries`, `--backoff` | Per attempt timeout, retries and the first wait between them |
+| `--max-backoff`, `--no-jitter` | Longest wait between retries (default 30 s); wait exactly instead of a random part of it |
 | `--retry-rounds`, `--retry-round-delay` | Send failed requests again at the end (needs `-o`) |
 | `--paginate` | `next:PATH`, `link`, `cursor:PATH[:PARAM]` or `page[:PARAM[:ITEMS_PATH]]` |
 | `--cache FILE`, `--cache-ttl` | Reuse responses, revalidated with ETag |

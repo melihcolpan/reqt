@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.3.0
+
+### Added
+- **SOCKS proxies:** `proxy=` and `Request(proxy=...)` accept `socks5://`, `socks5h://`, `socks4://` and `socks4a://` URLs, with a username and password if needed. The `h` / `a` variants let the proxy resolve host names (for Tor and internal networks). SOCKS and HTTP proxies can be mixed in one pool, and HTTPS through SOCKS verifies the real host's certificate. Install with `reqstorm[socks]` (aiohttp-socks); a clear error explains this when it is missing.
+- **`max_backoff`** (default 30 s) caps the wait between retries. Before, the wait doubled without limit: `retries=10` with the default `backoff=0.5` waited 256 s before the last attempt.
+- **`jitter`** (default on) waits a random time between half and all of the computed delay, so requests that failed together do not retry together.
+- Command line: `--max-backoff`, `--no-jitter`, and SOCKS URLs for `--proxy`.
+
+### Changed
+- Waits between retries are now capped at 30 s and jittered by default. Pass `max_backoff=float("inf"), jitter=False` for the previous behaviour. A server's `Retry-After` is still followed as given.
+
 ## 2.2.0
 
 ### Added
