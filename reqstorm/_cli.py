@@ -57,7 +57,11 @@ def _parser() -> argparse.ArgumentParser:
     request.add_argument("--bearer", metavar="TOKEN", help="send 'Authorization: Bearer TOKEN' "
                          "(or set REQSTORM_TOKEN)")  # fmt: skip
     request.add_argument(
-        "--proxy", action="append", default=[], metavar="URL", help="proxy URL; repeat to rotate"
+        "--proxy",
+        action="append",
+        default=[],
+        metavar="URL",
+        help="http://, socks5://, socks5h:// or socks4:// proxy URL; repeat to rotate",
     )
     request.add_argument("--no-verify", action="store_true", help="do not verify TLS certificates")
 
@@ -67,7 +71,13 @@ def _parser() -> argparse.ArgumentParser:
     pace.add_argument("--per-host", type=int, default=0, metavar="N", help="max requests in flight per host")
     pace.add_argument("--timeout", type=float, default=30.0, help="seconds per attempt (default 30)")
     pace.add_argument("--retries", type=int, default=0)
-    pace.add_argument("--backoff", type=float, default=0.5)
+    pace.add_argument(
+        "--backoff", type=float, default=0.5, help="seconds before the first retry, doubled after"
+    )
+    pace.add_argument(
+        "--max-backoff", type=float, default=30.0, help="longest wait between retries (default 30)"
+    )
+    pace.add_argument("--no-jitter", action="store_true", help="wait exactly, not a random part of the delay")
     pace.add_argument("--retry-rounds", type=int, default=0)
     pace.add_argument("--retry-round-delay", type=float, default=5.0)
     pace.add_argument("--paginate", metavar="STRATEGY",
@@ -204,7 +214,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parser.parse_args(argv)
     try:
         return _run(args)
-    except (ValueError, KeyError, SchemaError, OSError, json.JSONDecodeError) as error:
+    except (ValueError, KeyError, SchemaError, OSError, ImportError, json.JSONDecodeError) as error:
         message = error.args[0] if isinstance(error, KeyError) and error.args else error
         print(f"reqstorm: error: {message}", file=sys.stderr)
         return 2
@@ -260,6 +270,8 @@ def _batch(args: argparse.Namespace, cache: Optional[Cache]) -> int:
         timeout=args.timeout,
         retries=args.retries,
         backoff=args.backoff,
+        max_backoff=args.max_backoff,
+        jitter=not args.no_jitter,
         verify_ssl=not args.no_verify,
         rate_limit=rate,
         auth=BearerAuth(token) if token else None,

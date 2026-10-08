@@ -32,7 +32,7 @@ from ._schema import Field, Schema, SchemaError, extract, infer_schema
 from ._sync import fetch_all_sync, fetch_to_db_sync, fetch_to_file_sync, stream_sync
 from ._template import from_template, read_csv, read_sql
 
-__version__ = "2.2.0"
+__version__ = "2.3.0"
 
 __all__ = [
     "Attempt",
