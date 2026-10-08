@@ -20,7 +20,7 @@ __all__ = ["Summary", "fetch_to_db", "fetch_to_file"]
 
 _FILE_FIELDS = [
     "index", "method", "url", "status", "ok", "error", "attempts",
-    "elapsed", "final_url", "history", "headers", "body",
+    "elapsed", "final_url", "history", "from_cache", "page", "headers", "body",
 ]  # fmt: skip
 _SQLITE_SUFFIXES = (".db", ".sqlite", ".sqlite3")
 _TABLE_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?")
@@ -41,6 +41,8 @@ class Summary:
     """With a schema: rows written."""
     rejected: int = 0
     """With a schema: records rejected because a field was missing or had the wrong type."""
+    report: Dict[str, Any] = field(default_factory=dict)
+    """Response times, statuses, errors and per-host figures, as ``Results.report()``."""
 
 
 class _Sink:
@@ -336,6 +338,12 @@ async def _run_to_sink(
             "fetch_to_file() and fetch_to_db() do not accept `callback`; use fetch_all() or stream()"
         )
     default_method = str(options.get("method", "GET")).upper()
+    if resume and options.get("paginate") is not None:
+        raise ValueError(
+            "resume cannot be combined with paginate: the pages after the last one written are not "
+            "known without fetching again. Run without resume, or use key fields with a schema so a "
+            "second run updates rows instead of duplicating them."
+        )
 
     sink: _Sink = make_sink()
     try:
@@ -368,13 +376,18 @@ async def _run_to_sink(
         progress, total=None if total is None else total - len(done) if resume else total
     )
     started = time.monotonic()
+    from ._report import Report
+
     ok = failed = rows = rejected = 0
     errors: List[Dict[str, Any]] = []
+    report = Report()
     writer = _Writer(sink, ordered=ordered, batch_size=batch_size)
     try:
         async for result in _execute(pending(), retry_rounds, retry_round_delay, options):
+            report.add(result)
+            position = positions[result.seed_index if result.seed_index is not None else result.index]
             if schema is not None:
-                item = _schema_item(result, positions[result.index], schema)
+                item = _schema_item(result, position, schema)
                 await writer.add(result.index, item)
                 rows += len(item["rows"])
                 rejected += len(item["rejects"]) if result.ok else 0
@@ -390,7 +403,7 @@ async def _run_to_sink(
                 if tracker is not None:
                     tracker.update(result)
                 continue
-            record = _record(result, positions[result.index], body, include_headers)
+            record = _record(result, position, body, include_headers)
             await writer.add(result.index, record)
             if result.ok:
                 ok += 1
@@ -413,6 +426,7 @@ async def _run_to_sink(
         errors=errors,
         rows=rows,
         rejected=rejected,
+        report=report.as_dict(),
     )
 
 
@@ -487,7 +501,8 @@ async def fetch_to_file(
         table: Table name for SQLite output.
         batch_size: Records written per batch.
         schema: Write typed fields parsed from each JSON response instead of the raw
-            response: a dict of column name to ``reqstorm.Field``, or a ``reqstorm.Schema``.
+            response: a dict of column name to ``reqstorm.Field``, a ``reqstorm.Schema``, or a
+            Pydantic v2 model (``pip install reqstorm[pydantic]``).
             See ``fetch_to_db`` and the "Structured data" guide.
         explode: With a schema, path to an array in each response; every element becomes a row.
         rejects_table: With a schema and SQLite output, also write rejected records to this table.

@@ -288,19 +288,25 @@ def parse_json(body: bytes) -> Tuple[Any, Optional[str]]:
         return None, f"response is not valid JSON ({error})"
 
 
-def as_schema(schema: Union[Schema, Mapping[str, Field]], explode: Optional[str] = None) -> Schema:
+def as_schema(schema: Any, explode: Optional[str] = None) -> Schema:
+    from ._pydantic import is_model, schema_from_model
+
+    if is_model(schema):
+        return schema_from_model(schema, explode)
     if isinstance(schema, Schema):
         if explode is not None and explode != schema.explode:
             return Schema(schema.fields, explode)
         return schema
     if isinstance(schema, Mapping):
         return Schema(dict(schema), explode)
-    raise SchemaError("schema must be a dict of column name to reqstorm.Field, or a reqstorm.Schema")
+    raise SchemaError(
+        "schema must be a dict of column name to reqstorm.Field, a reqstorm.Schema or a Pydantic model"
+    )
 
 
 def extract(
     results: Iterable[Result],
-    schema: Union[Schema, Mapping[str, Field]],
+    schema: Any,
     *,
     explode: Optional[str] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
