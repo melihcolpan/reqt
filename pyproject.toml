@@ -11,7 +11,7 @@ license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Melih Colpan", email = "melihcolpan1@gmail.com" }]
 requires-python = ">=3.9"
-dependencies = ["aiohttp>=3.9,<4"]
+dependencies = ["aiohttp>=3.14.4,<4"]
 keywords = ["asyncio", "aiohttp", "http", "requests", "concurrent", "crawler"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
