@@ -19,108 +19,142 @@ from ._schema import Field, Schema, SchemaError, infer_schema
 from ._sync import fetch_all_sync, fetch_to_file_sync, stream_sync
 from ._template import from_template, read_csv
 
-EXAMPLES = """\
+EPILOG = """\
 examples:
   reqstorm urls.txt -o results.jsonl --rate 100/min --retries 2
   reqstorm urls.txt --estimate --rate 100/min
   cat urls.txt | reqstorm --rate auto > results.jsonl
-  reqstorm users.csv --template "https://api.example.com/users/{id}" -o users.db
+  reqstorm urls.txt -o results.db -v --log-file logs/
+  reqstorm users.csv --template "https://api.example.com/users/{id}" -o users.jsonl
   reqstorm urls.txt --paginate next:links.next --schema products.json --explode items -o shop.db
   reqstorm urls.txt --infer-schema 5 --explode items > products.json
+  reqstorm urls.txt --proxy socks5h://127.0.0.1:9050 -o out.jsonl
 
-exit status: 0 when every request succeeded, 1 when some failed or records were rejected,
-2 for invalid arguments.
+rate limits:
+  5 or 0.5 (per second), 10/s, 100/min, 30/5min, 1000/h, 2/day, per host; or auto to
+  follow the server's 429 responses and X-RateLimit headers.
+
+environment:
+  REQSTORM_TOKEN   bearer token, instead of --bearer (keeps it out of shell history)
+
+exit status:
+  0 every request succeeded   1 some failed or records were rejected
+  2 invalid arguments         130 interrupted
+
+documentation: https://reqstorm.github.io/guide/cli/
 """
 
 
+# fmt: off
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="reqstorm",
         description="Send many HTTP requests with rate limits, retries and progress, and save the results.",
-        epilog=EXAMPLES,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog=EPILOG,
+        formatter_class=lambda prog: argparse.RawDescriptionHelpFormatter(prog, max_help_position=32),
     )
-    parser.add_argument("input", nargs="?", default="-",
-                        help="file with one URL per line, or a CSV with --template "
-                        "(default: standard input)")  # fmt: skip
-    parser.add_argument("-o", "--output", help="write results to a .jsonl, .csv or .db/.sqlite file "
-                        "(default: JSON lines on standard output)")  # fmt: skip
-    parser.add_argument("--version", action="version", version=f"reqstorm {__version__}")
+    add = parser.add_argument
+    add("input", nargs="?", default="-",
+        help="file with one URL per line (blank lines and # comments are skipped), or a CSV file "
+        "with --template; default: standard input")
+    add("-o", "--output", metavar="FILE",
+        help="write results to FILE: .jsonl, .csv, or .db/.sqlite for SQLite; "
+        "default: JSON lines on standard output")
+    add("--version", action="version", version=f"reqstorm {__version__}")
 
     request = parser.add_argument_group("requests")
-    request.add_argument("-X", "--method", default="GET")
-    request.add_argument("-H", "--header", action="append", default=[], metavar="'NAME: VALUE'")
-    request.add_argument("--json", help="JSON body sent with every request")
-    request.add_argument("--data", help="raw body sent with every request")
-    request.add_argument("--template", metavar="URL", help="URL template filled from each CSV row, "
-                         "e.g. 'https://api.example.com/users/{id}'")  # fmt: skip
-    request.add_argument("--bearer", metavar="TOKEN", help="send 'Authorization: Bearer TOKEN' "
-                         "(or set REQSTORM_TOKEN)")  # fmt: skip
-    request.add_argument(
-        "--proxy",
-        action="append",
-        default=[],
-        metavar="URL",
-        help="http://, socks5://, socks5h:// or socks4:// proxy URL; repeat to rotate",
-    )
-    request.add_argument("--no-verify", action="store_true", help="do not verify TLS certificates")
+    add = request.add_argument
+    add("-X", "--method", default="GET", help="HTTP method for every request (default: GET)")
+    add("-H", "--header", action="append", default=[], metavar="'NAME: VALUE'",
+        help="header sent with every request; repeat for more")
+    add("--json", metavar="JSON", help="JSON body sent with every request")
+    add("--data", metavar="TEXT", help="raw body sent with every request")
+    add("--template", metavar="URL",
+        help="treat the input as CSV and build one URL per row from {column} placeholders, "
+        "e.g. 'https://api.example.com/users/{id}'")
+    add("--bearer", metavar="TOKEN", help="send 'Authorization: Bearer TOKEN' (or set REQSTORM_TOKEN)")
+    add("--proxy", action="append", default=[], metavar="URL",
+        help="send through a proxy: http://, socks5://, socks5h://, socks4:// or socks4a://; "
+        "repeat to rotate through several")
+    add("--no-verify", action="store_true",
+        help="do not verify TLS certificates (only for hosts you control)")
 
-    pace = parser.add_argument_group("pace and retries")
-    pace.add_argument("--rate", help="per-host rate limit: 5, 10/s, 100/min, 1000/h, or auto")
-    pace.add_argument("-c", "--concurrency", type=int, default=100)
-    pace.add_argument("--per-host", type=int, default=0, metavar="N", help="max requests in flight per host")
-    pace.add_argument("--timeout", type=float, default=30.0, help="seconds per attempt (default 30)")
-    pace.add_argument("--retries", type=int, default=0)
-    pace.add_argument(
-        "--backoff", type=float, default=0.5, help="seconds before the first retry, doubled after"
-    )
-    pace.add_argument(
-        "--max-backoff", type=float, default=30.0, help="longest wait between retries (default 30)"
-    )
-    pace.add_argument("--no-jitter", action="store_true", help="wait exactly, not a random part of the delay")
-    pace.add_argument("--retry-rounds", type=int, default=0)
-    pace.add_argument("--retry-round-delay", type=float, default=5.0)
-    pace.add_argument("--paginate", metavar="STRATEGY",
-                      help="next:PATH, link, cursor:PATH[:PARAM], or page[:PARAM[:ITEMS_PATH]]")  # fmt: skip
-    pace.add_argument("--max-pages", type=int, default=1000)
-    pace.add_argument(
-        "--cache", metavar="FILE", help="reuse responses from this cache file (revalidated with ETag)"
-    )
-    pace.add_argument(
-        "--cache-ttl", type=float, help="seconds a cached response is used without asking the server"
-    )
+    pace = parser.add_argument_group("pace")
+    add = pace.add_argument
+    add("--rate", metavar="LIMIT",
+        help="per-host rate limit: 5, 10/s, 100/min, 1000/h, or auto (default: none)")
+    add("-c", "--concurrency", type=int, default=100, metavar="N",
+        help="requests in flight at once (default: 100)")
+    add("--per-host", type=int, default=0, metavar="N",
+        help="requests in flight per host (default: no limit)")
+    add("--timeout", type=float, default=30.0, metavar="SECONDS",
+        help="time allowed for one attempt, including the body (default: 30)")
+
+    retry = parser.add_argument_group("retries")
+    add = retry.add_argument
+    add("--retries", type=int, default=0, metavar="N",
+        help="retry timeouts, connection errors and 429/5xx up to N times (default: 0)")
+    add("--backoff", type=float, default=0.5, metavar="SECONDS",
+        help="wait before the first retry, doubled after each (default: 0.5)")
+    add("--max-backoff", type=float, default=30.0, metavar="SECONDS",
+        help="longest wait between retries (default: 30)")
+    add("--no-jitter", action="store_true", help="wait exactly, instead of a random half to all of the delay")
+    add("--retry-rounds", type=int, default=0, metavar="N",
+        help="send requests that still failed again after all others, up to N rounds (needs -o)")
+    add("--retry-round-delay", type=float, default=5.0, metavar="SECONDS",
+        help="wait before each retry round (default: 5)")
+
+    more = parser.add_argument_group("pagination and caching")
+    add = more.add_argument
+    add("--paginate", metavar="STRATEGY",
+        help="follow pages: next:PATH (URL in the JSON), link (Link header), cursor:PATH[:PARAM], "
+        "or page[:PARAM[:ITEMS_PATH]]")
+    add("--max-pages", type=int, default=1000, metavar="N",
+        help="pages per starting URL at most (default: 1000)")
+    add("--cache", metavar="FILE", help="keep responses in this SQLite file and revalidate them with ETag")
+    add("--cache-ttl", type=float, metavar="SECONDS",
+        help="use a cached response without asking the server for this long (default: always ask)")
 
     output = parser.add_argument_group("output")
-    output.add_argument("--flush-interval", type=float, default=1.0, metavar="SECONDS",
-                        help="write waiting results to --output at least this often (default 1)")  # fmt: skip
-    output.add_argument(
-        "--resume", action="store_true", help="skip requests already saved successfully in --output"
-    )
-    output.add_argument("--ordered", action="store_true", help="write results in input order")
-    output.add_argument("--body", choices=["text", "base64", "none"], default="text")
-    output.add_argument("--include-headers", action="store_true")
-    output.add_argument("--schema", metavar="FILE", help="JSON file mapping columns to fields: "
-                        '{"price": {"path": "pricing.amount", "type": "float"}}')  # fmt: skip
-    output.add_argument("--explode", metavar="PATH", help="with --schema: one row per element of this array")
-    output.add_argument("--table", default="reqstorm_results", help="table name for .db output")
-    output.add_argument("--rejects-table", help="with --schema and .db output: table for rejected records")
-    output.add_argument("--infer-schema", type=int, metavar="N",
-                        help="fetch the first N inputs, print a draft --schema file and exit")  # fmt: skip
+    add = output.add_argument
+    add("--body", choices=["text", "base64", "none"], default="text",
+        help="how to store response bodies (default: text)")
+    add("--include-headers", action="store_true", help="store response headers too")
+    add("--resume", action="store_true",
+        help="skip requests already saved successfully in -o, append the rest")
+    add("--ordered", action="store_true", help="write results in input order instead of as they finish")
+    add("--table", default="reqstorm_results", metavar="NAME",
+        help="table for .db output (default: reqstorm_results)")
+    add("--flush-interval", type=float, default=1.0, metavar="SECONDS",
+        help="write waiting results to -o at least this often (default: 1)")
 
-    info = parser.add_argument_group("information")
-    info.add_argument("--estimate", action="store_true", help="print how long the batch would take and exit")
-    info.add_argument("--latency", type=float, default=0.5, help="typical response time for --estimate")
-    info.add_argument("-q", "--quiet", action="store_true", help="no progress line; log only errors")
-    info.add_argument("-v", "--verbose", action="count", default=0,
-                      help="log more: -v run events (INFO), -vv every attempt (DEBUG)")  # fmt: skip
-    info.add_argument("--log-file", metavar="PATH",
-                      help="write the log to a file instead of stderr; a directory or a name with {time} "
-                      "gets a time-stamped file, and an existing file is never overwritten")  # fmt: skip
-    info.add_argument("--log-json", action="store_true", help="log one JSON object per line")
-    info.add_argument(
-        "--report", action="store_true", help="print response times, statuses and hosts at the end"
-    )
+    data = parser.add_argument_group("typed columns")
+    add = data.add_argument
+    add("--schema", metavar="FILE",
+        help="JSON file mapping columns to fields, e.g. {\"price\": {\"path\": \"pricing.amount\", "
+        "\"type\": \"float\"}}; writes typed rows instead of raw responses (needs -o)")
+    add("--explode", metavar="PATH", help="with --schema: one row per element of the array at PATH")
+    add("--rejects-table", metavar="NAME",
+        help="with --schema and .db output: also store rejected records here")
+    add("--infer-schema", type=int, metavar="N",
+        help="fetch the first N inputs, print a draft --schema file, exit")
+
+    info = parser.add_argument_group("progress and logging")
+    add = info.add_argument
+    add("-v", "--verbose", action="count", default=0,
+        help="log more: -v run events (INFO), -vv every attempt (DEBUG); "
+        "warnings and errors are always logged")
+    add("-q", "--quiet", action="store_true", help="no progress line, log errors only")
+    add("--log-file", metavar="PATH",
+        help="log to a file instead of stderr; a directory or a name with {time} gives a time-stamped "
+        "file per run, and an existing file is never overwritten")
+    add("--log-json", action="store_true", help="log one JSON object per line")
+    add("--report", action="store_true", help="print response times, statuses and hosts at the end")
+    add("--estimate", action="store_true", help="print how long the batch would take, send nothing, exit")
+    add("--latency", type=float, default=0.5, metavar="SECONDS",
+        help="typical response time assumed by --estimate (default: 0.5)")
     return parser
+# fmt: on
 
 
 def _paginator(text: Optional[str], max_pages: int) -> Optional[Paginator]:
