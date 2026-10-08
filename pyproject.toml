@@ -49,7 +49,12 @@ reqt = ["py.typed"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    # On Python 3.9, pytest-asyncio creates an event loop through asyncio.get_event_loop()
+    # after a test has used asyncio.run() (the blocking API does) and never closes it.
+    "ignore:unclosed event loop:ResourceWarning",
+]
 
 [tool.ruff]
 line-length = 110
