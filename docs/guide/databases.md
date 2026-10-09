@@ -1,5 +1,32 @@
 # Writing to databases
 
+There are two ways to write results to a table:
+
+| | Raw responses (this page) | Typed columns with a schema |
+|---|---|---|
+| One row per | request | JSON record (`explode` turns an array into many rows) |
+| Columns | `url`, `status`, `ok`, `error`, `attempts`, `body`, ... | the fields you choose: `id BIGINT`, `price DOUBLE PRECISION`, `tags JSONB`, ... |
+| Values checked | no | yes; wrong types and `NaN` go to a rejects table |
+| Running again | adds rows (or skips with `resume`) | updates rows with the same key (upsert) |
+| Use it for | logging, auditing, any response format | putting API data into tables you query |
+
+For typed columns, pass `schema=`:
+
+```python
+from reqstorm import Field
+
+schema = {
+    "id": Field("id", int, required=True, key=True),
+    "name": Field("name", str),
+    "price": Field("pricing.amount", float),
+}
+reqstorm.fetch_to_db_sync(urls, connection, table="products", schema=schema, explode="items")
+```
+
+See [Schemas: JSON to typed columns](structured-data.md) for field types, nested paths, rejected records, upserts, Pydantic models and drafting a schema from samples.
+
+## Raw responses
+
 `fetch_to_db` inserts one row per request through a database connection you already have:
 
 === "PostgreSQL"
@@ -34,7 +61,7 @@
 
 Supported drivers: `sqlite3`, `psycopg` and `psycopg2` (PostgreSQL), `pymysql`, `MySQLdb` (mysqlclient) and `mysql.connector` (MySQL). reqstorm does not close a connection you pass in.
 
-## The table
+### The table
 
 reqstorm creates the table if it does not exist. The fields you filter on are real columns, and the parts whose shape varies are JSON:
 
@@ -57,7 +84,7 @@ SELECT status, count(*) FROM api_results GROUP BY status;
 SELECT url FROM api_results WHERE history -> 0 ->> 'status' = '503';   -- PostgreSQL
 ```
 
-## How rows are written
+### How rows are written
 
 Rows are inserted in batches (`batch_size`, default 100) with `executemany` on a background thread, so a remote database does not slow down the requests. `sqlite3` connections are the exception: they must stay on the thread that created them, so their writes happen in place.
 

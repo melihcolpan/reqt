@@ -63,9 +63,9 @@ print(results.summary())
 
     ---
 
-    JSONL, CSV, SQLite, PostgreSQL or MySQL, written as results arrive, so millions of results never fill your memory. Resume an interrupted run.
+    JSONL, CSV, SQLite, PostgreSQL or MySQL, written as results arrive, so millions of results never fill your memory. Resume an interrupted run. With a **schema**, JSON fields go into typed, checked columns, with upserts on key fields.
 
-    [:octicons-arrow-right-24: Files](guide/files.md) · [Databases](guide/databases.md) · [Typed columns](guide/structured-data.md)
+    [:octicons-arrow-right-24: Files](guide/files.md) · [Databases](guide/databases.md) · [Schemas](guide/structured-data.md)
 
 -   :material-book-open-page-variant:{ .lg .middle } **Every page of an API**
 

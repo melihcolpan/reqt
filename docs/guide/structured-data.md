@@ -1,4 +1,6 @@
-# Structured data
+# Schemas: JSON to typed columns
+
+A **schema** writes the fields of each JSON response into their own typed database columns (or CSV / JSON Lines fields) instead of storing the raw response. It works with `fetch_to_db`, `fetch_to_file`, the `reqstorm` command (`--schema`) and Pydantic models.
 
 When an API returns JSON, you usually want its fields in proper columns, not the raw response. Give reqstorm a schema: which column comes from which field, and what type it must have. Every value is checked before it is written, so a table never ends up with a string in a number column or a `NaN` in a price.
 

@@ -15,7 +15,7 @@
 ::: reqstorm.fetch_to_db_sync
 ::: reqstorm.Summary
 
-## Structured data
+## Schemas
 
 ::: reqstorm.Field
 ::: reqstorm.Schema
