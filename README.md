@@ -99,11 +99,35 @@ reqstorm does all of that for you, with one call.
 
 ## Installation
 
+**In your Python code:**
+
 ```console
 $ python -m pip install reqstorm
 ```
 
-reqstorm supports Python 3.9 to 3.13 on Linux, macOS and Windows. Its only dependency is [aiohttp](https://docs.aiohttp.org). For PostgreSQL or MySQL output, install the driver you already use (`psycopg`, `psycopg2`, `pymysql`, `mysqlclient` or `mysql-connector-python`). To use Pydantic models as schemas, install `reqstorm[pydantic]`; for SOCKS proxies, `reqstorm[socks]`.
+**As a command** (`reqstorm urls.txt -o out.jsonl`), pick what you already use:
+
+| You have | Install with |
+|---|---|
+| Homebrew (macOS, Linux) | `brew install melihcolpan/tap/reqstorm` |
+| pipx | `pipx install "reqstorm[socks]"` |
+| uv | `uv tool install "reqstorm[socks]"` |
+| Docker | nothing to install, see below |
+
+```console
+$ docker run --rm -v "$PWD:/data" \
+    ghcr.io/melihcolpan/reqstorm \
+    urls.txt -o results.jsonl
+```
+
+Python 3.9 to 3.13 on Linux, macOS and Windows. The only required dependency is [aiohttp](https://docs.aiohttp.org). Optional extras:
+
+| Extra | Adds |
+|---|---|
+| `reqstorm[socks]` | SOCKS4/5 proxies |
+| `reqstorm[pydantic]` | Pydantic models as schemas |
+
+For PostgreSQL or MySQL output, install the driver you already use (`psycopg`, `psycopg2`, `pymysql`, `mysqlclient` or `mysql-connector-python`).
 
 ## Quick start
 

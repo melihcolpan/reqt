@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.4.2
+
+### Added
+- **Docker image:** `ghcr.io/melihcolpan/reqstorm` (linux/amd64 and linux/arm64) runs the command with SOCKS support: `docker run --rm -v "$PWD:/data" ghcr.io/melihcolpan/reqstorm urls.txt -o results.jsonl`. Built and tested for every release, tagged with the version, the minor version and `latest`.
+- **Homebrew:** `brew install melihcolpan/tap/reqstorm` on macOS and Linux; the formula follows new releases automatically.
+- Installation docs show each way to install, library or command, side by side.
+
+### Changed
+- Clearer package description, keywords and classifiers on PyPI.
+
 ## 2.4.1
 
 ### Fixed
