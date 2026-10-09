@@ -53,7 +53,7 @@ for error in results.errors():
 - [Timeouts and retries](#timeouts-and-retries)
 - [Writing results to a file](#writing-results-to-a-file)
 - [Writing results to a database](#writing-results-to-a-database)
-- [Structured data: JSON to typed columns](#structured-data-json-to-typed-columns)
+- [Schemas: JSON to typed columns](#schemas-json-to-typed-columns)
 - [Pagination](#pagination)
 - [Requests from a CSV file or a table](#requests-from-a-csv-file-or-a-table)
 - [Tokens, proxies and caching](#tokens-proxies-and-caching)
@@ -90,7 +90,7 @@ reqstorm does all of that for you, with one call.
 | Tokens and proxies | Refresh an expired token on 401; rotate through HTTP and SOCKS proxies |
 | Caching | ETag / `If-None-Match`: unchanged resources cost a 304 |
 | Output | JSONL, CSV, SQLite, PostgreSQL, MySQL; ordered or as completed |
-| Typed columns | JSON fields to checked columns, nested paths, arrays to rows |
+| Schemas | JSON fields to typed, checked columns; nested paths, arrays to rows, upserts |
 | Resume | Skip what already succeeded after an interruption |
 | Planning | `estimate()` before you start, progress with ETA while running |
 | Logging | Retries, pauses and failures; per-run level, file and JSON, independent of the app |
@@ -408,7 +408,7 @@ GROUP BY status;
 
 Rows are inserted in batches on a background thread, so a remote database does not slow the requests down. Existing rows are never deleted. `body="bytes"` stores the raw body in a binary column.
 
-## Structured data: JSON to typed columns
+## Schemas: JSON to typed columns
 
 Instead of storing raw responses, give a schema and each JSON field goes to its own typed column. Every value is checked first, so a number column never gets a string or a `NaN`.
 
@@ -460,7 +460,7 @@ reqstorm.fetch_to_file_sync(
 )
 ```
 
-More in the [structured data guide](https://reqstorm.github.io/guide/structured-data/).
+More in the [schemas guide](https://reqstorm.github.io/guide/structured-data/).
 
 ## Pagination
 

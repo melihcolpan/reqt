@@ -107,6 +107,28 @@ summary = reqstorm.fetch_to_file_sync(
 print(summary.ok, summary.failed)
 ```
 
+## Put API data into a table
+
+To keep the JSON fields rather than raw responses, describe the columns once with a schema. Each value is checked before it is written, and running the batch again updates rows instead of duplicating them:
+
+```python
+import sqlite3
+import reqstorm
+from reqstorm import Field
+
+schema = {
+    "id": Field("id", int, required=True, key=True),
+    "name": Field("name", str),
+    "price": Field("pricing.amount", float),
+}
+
+with sqlite3.connect("shop.db") as connection:
+    summary = reqstorm.fetch_to_db_sync(urls, connection, table="products", schema=schema, explode="items")
+print(summary.rows, "rows,", summary.rejected, "rejected")
+```
+
+PostgreSQL and MySQL work the same way with their connections. More in [Schemas: JSON to typed columns](guide/structured-data.md).
+
 ## The functions
 
 | Blocking | async | What it does |

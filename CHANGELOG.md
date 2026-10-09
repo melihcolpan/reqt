@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.4.3
+
+### Fixed
+- Applications that never configure `logging` no longer see reqstorm's warnings and errors on stderr. The `"reqstorm"` logger now has a `NullHandler`, as a library should, so nothing is printed unless the application turns logging on (or a run passes `log_level=`).
+
+### Documentation
+- Writing JSON fields into typed columns is now easy to find: the guide is called "Schemas: JSON to typed columns", the databases page compares raw responses with schemas at the top and shows a schema example, Getting started has a "Put API data into a table" step, and the home page names schemas.
+
 ## 2.4.2
 
 ### Added

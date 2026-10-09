@@ -11,6 +11,8 @@ async def main():
 asyncio.run(main())
 """
 
+import logging
+
 from ._auth import BearerAuth
 from ._cache import Cache
 from ._client import (
@@ -33,7 +35,12 @@ from ._schema import Field, Schema, SchemaError, extract, infer_schema
 from ._sync import fetch_all_sync, fetch_to_db_sync, fetch_to_file_sync, stream_sync
 from ._template import from_template, read_csv, read_sql
 
-__version__ = "2.4.2"
+__version__ = "2.4.3"
+
+# A library must not print log messages the application did not ask for: without this,
+# Python's last-resort handler would print reqstorm's warnings and errors to stderr in
+# applications that never configured logging.
+logging.getLogger("reqstorm").addHandler(logging.NullHandler())
 
 __all__ = [
     "Attempt",

@@ -265,3 +265,19 @@ async def test_flush_interval_zero_and_negative(server, tmp_path):
     assert summary.ok == 3 and len((tmp_path / "now.jsonl").read_text().splitlines()) == 3
     with pytest.raises(ValueError, match="flush_interval"):
         await reqstorm.fetch_to_file([server + "/ok"], tmp_path / "x.jsonl", flush_interval=-1)
+
+
+def test_nothing_is_printed_when_the_application_has_not_configured_logging(thread_server):
+    import subprocess
+    import sys
+
+    # A fresh interpreter with no logging configuration; the request fails with a 404,
+    # which reqstorm logs as an error that must not reach stderr
+    code = (
+        "import reqstorm\n"
+        f"results = reqstorm.fetch_all_sync(['{thread_server}/status/404'])\n"
+        "print(results[0].status)\n"
+    )
+    completed = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=60)
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "404" and completed.stderr == ""

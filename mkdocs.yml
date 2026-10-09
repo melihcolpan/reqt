@@ -55,7 +55,7 @@ nav:
       - Timeouts and retries: guide/retries.md
       - Writing to files: guide/files.md
       - Writing to databases: guide/databases.md
-      - Structured data: guide/structured-data.md
+      - "Schemas: JSON to typed columns": guide/structured-data.md
       - Pagination: guide/pagination.md
       - Requests from data: guide/templates.md
       - Tokens, proxies and caching: guide/auth.md
