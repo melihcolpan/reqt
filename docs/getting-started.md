@@ -2,11 +2,49 @@
 
 ## Install
 
-```console
-$ python -m pip install reqstorm
-```
+Use reqstorm in your Python code, or as a command on its own. Pick one:
 
-reqstorm supports Python 3.9 and newer. Its only dependency is [aiohttp](https://docs.aiohttp.org). For PostgreSQL or MySQL output, install the database driver you already use (see [Writing to databases](guide/databases.md)).
+=== "Python library"
+
+    ```console
+    $ python -m pip install reqstorm
+    ```
+
+    For your scripts, notebooks and applications. Python 3.9 and newer; the only required dependency is [aiohttp](https://docs.aiohttp.org).
+
+=== "Command: Homebrew"
+
+    ```console
+    $ brew install melihcolpan/tap/reqstorm
+    ```
+
+    The `reqstorm` command on macOS and Linux, in its own environment, with SOCKS proxy support. `brew upgrade reqstorm` updates it.
+
+=== "Command: pipx or uv"
+
+    ```console
+    $ pipx install "reqstorm[socks]"
+    $ uv tool install "reqstorm[socks]"
+    ```
+
+    The `reqstorm` command on any system with Python, isolated from your other packages.
+
+=== "Command: Docker"
+
+    ```console
+    $ docker run --rm -v "$PWD:/data" ghcr.io/melihcolpan/reqstorm urls.txt -o results.jsonl
+    ```
+
+    Nothing to install. The current directory is mounted at `/data`, where files are read and written. See [Docker](guide/cli.md#docker).
+
+Optional extras, for the library or with pipx/uv:
+
+| Extra | Adds |
+|---|---|
+| `reqstorm[socks]` | SOCKS4 and SOCKS5 proxies |
+| `reqstorm[pydantic]` | Pydantic models as schemas |
+
+For PostgreSQL or MySQL output, install the database driver you already use (see [Writing to databases](guide/databases.md)).
 
 ## Your first batch
 

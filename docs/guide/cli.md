@@ -1,6 +1,6 @@
 # Command line
 
-Installing reqstorm also installs the `reqstorm` command, for batches that need no Python code:
+The `reqstorm` command runs a batch without any Python code. Install it with `brew install melihcolpan/tap/reqstorm`, `pipx install "reqstorm[socks]"` or `uv tool install "reqstorm[socks]"`, or run it with Docker (below). Installing the Python package also installs the command.
 
 ```console
 $ reqstorm urls.txt -o results.jsonl --rate 100/min --retries 2
@@ -89,3 +89,20 @@ A schema file is JSON: each column maps to a field with a `path`, a `type` (`int
 | 1 | Some requests failed or records were rejected; see the output |
 | 2 | Invalid arguments or an unreadable input or schema file |
 | 130 | Interrupted with Ctrl+C |
+
+## Docker
+
+The image `ghcr.io/melihcolpan/reqstorm` contains the command with SOCKS proxy support, for `linux/amd64` and `linux/arm64`. Tags: `latest`, a release such as `2.4.1`, or a minor version such as `2.4`.
+
+```console
+# Files: mount the current directory at /data, the working directory in the container
+$ docker run --rm -v "$PWD:/data" ghcr.io/melihcolpan/reqstorm urls.txt -o results.jsonl --rate 100/min
+
+# Pipes: read URLs from stdin, write results to stdout
+$ cat urls.txt | docker run --rm -i ghcr.io/melihcolpan/reqstorm -q > results.jsonl
+
+# A token, without putting it on the command line
+$ docker run --rm -v "$PWD:/data" -e REQSTORM_TOKEN ghcr.io/melihcolpan/reqstorm urls.txt -o out.jsonl
+```
+
+The container runs as an unprivileged user (uid 1000). If your directory is not writable for that user, add `--user "$(id -u):$(id -g)"`.

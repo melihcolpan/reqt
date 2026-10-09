@@ -5,18 +5,23 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "reqstorm"
 dynamic = ["version"]
-description = "Send large numbers of HTTP requests concurrently with asyncio, with retries, timeouts and per-request results."
+description = "Send thousands of HTTP requests from Python or the command line, with per-host rate limits, retries, pagination, progress and logs, and results written to files or databases."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
 authors = [{ name = "Melih Colpan", email = "colpanmelih@gmail.com" }]
 requires-python = ">=3.9"
 dependencies = ["aiohttp>=3.9,<4"]
-keywords = ["asyncio", "aiohttp", "http", "requests", "concurrent", "bulk", "rate-limit", "retry", "crawler", "scraping"]
+keywords = ["http", "http-client", "asyncio", "aiohttp", "bulk-requests", "batch", "concurrency", "rate-limit",
+            "retry", "backoff", "pagination", "api-client", "cli", "socks", "jsonl", "sqlite", "postgresql"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
     "Framework :: AsyncIO",
+    "Framework :: Pydantic :: 2",
     "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Intended Audience :: System Administrators",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
@@ -25,7 +30,10 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Topic :: Database",
     "Topic :: Internet :: WWW/HTTP",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
     "Typing :: Typed",
 ]
 
@@ -40,6 +48,7 @@ reqstorm = "reqstorm._cli:main"
 
 [project.urls]
 Homepage = "https://reqstorm.github.io"
+Documentation = "https://reqstorm.github.io"
 Source = "https://github.com/melihcolpan/reqstorm"
 Changelog = "https://github.com/melihcolpan/reqstorm/blob/master/CHANGELOG.md"
 Issues = "https://github.com/melihcolpan/reqstorm/issues"
