@@ -156,3 +156,24 @@ def test_progress_is_shown_when_writing_to_stdout(thread_server, tmp_path, capsy
     assert main([str(urls), "--flush-interval", "0"]) == 0
     captured = capsys.readouterr()
     assert "1/1 (100%)" in captured.err and len(_lines(captured.out)) == 1
+
+
+def test_auto_concurrency_from_the_command_line(thread_server, tmp_path, capsys):
+    urls = tmp_path / "urls.txt"
+    urls.write_text(f"{thread_server}/ok\n" * 5)
+    assert (
+        main([str(urls), "-c", "auto", "--max-concurrency", "4", "-v", "-o", str(tmp_path / "out.jsonl")])
+        == 0
+    )
+    err = capsys.readouterr().err
+    assert "concurrency auto (max 4)" in err and "concurrency auto: ended at" in err
+    assert main([str(urls), "-c", "auto", "--estimate"]) == 0  # estimates with the maximum
+    assert "5 requests" in capsys.readouterr().out
+
+
+def test_invalid_concurrency_on_the_command_line(tmp_path, capsys):
+    urls = tmp_path / "urls.txt"
+    urls.write_text("https://api.example.com/\n")
+    with pytest.raises(SystemExit) as exit_info:
+        main([str(urls), "-c", "fast"])
+    assert exit_info.value.code == 2 and "invalid concurrency 'fast'" in capsys.readouterr().err

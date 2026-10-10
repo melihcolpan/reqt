@@ -59,6 +59,8 @@ class ProgressInfo:
     rounds: int = 0
     paused: Dict[str, float] = field(default_factory=dict)
     """Hosts the server asked to wait (``rate_limit="auto"``), with seconds left."""
+    concurrency: Optional[int] = None
+    """With ``concurrency="auto"``: the number of requests currently allowed in flight."""
     finished: bool = False
 
     def __str__(self) -> str:
@@ -68,7 +70,10 @@ class ProgressInfo:
             count = str(self.done)
         parts = [f"reqstorm: {count}", f"ok {self.ok}", f"failed {self.failed}"]
         if not self.finished:
-            parts.append(f"active {self.in_flight}")
+            active = f"active {self.in_flight}"
+            if self.concurrency is not None:
+                active += f"/{self.concurrency}"  # with concurrency="auto": in flight / allowed
+            parts.append(active)
         if self.retries:
             parts.append(f"retries {self.retries}")
         parts.append(f"{self.rate:.1f} req/s")
@@ -216,6 +221,7 @@ class Run:
         self.done = self.ok = self.failed = self.in_flight = self.retries = self.attempts = 0
         self.round = self.rounds = 0
         self.limiters: list = []
+        self.controller: Any = None  # AutoConcurrency with concurrency="auto"
         self._recent: Deque[float] = collections.deque()
         self._task: Optional[asyncio.Task] = None
         self._closers: list = []
@@ -362,6 +368,7 @@ class Run:
             total=self.total, done=self.done, ok=self.ok, failed=self.failed, in_flight=self.in_flight,
             retries=self.retries, rate=rate, elapsed=elapsed, eta=eta, round=self.round,
             rounds=self.rounds, paused=paused, finished=finished,
+            concurrency=self.controller.limit if self.controller is not None else None,
         )  # fmt: skip
 
     def _report(self, info: ProgressInfo) -> None:
@@ -398,6 +405,11 @@ class Run:
                  format_duration(info.elapsed), self.ok, self.failed, self.retries, event="finish",
                  total=self.done, ok=self.ok, failed=self.failed, retries=self.retries,
                  elapsed=round(info.elapsed, 3))  # fmt: skip
+        if self.controller is not None:
+            c = self.controller
+            self.log(logging.INFO, "concurrency auto: ended at %d, ranged from %d to %d over %d changes",
+                     c.limit, c.lowest, c.highest, c.changes, event="concurrency_summary",
+                     concurrency=c.limit, lowest=c.lowest, highest=c.highest)  # fmt: skip
         for close in self._closers:
             close()
         self._closers.clear()

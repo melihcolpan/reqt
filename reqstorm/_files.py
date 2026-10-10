@@ -439,7 +439,10 @@ async def _run_to_sink(
     report = Report()
     writer = _Writer(sink, ordered=ordered, batch_size=batch_size, flush_interval=flush_interval)
     writer.start()
-    run.start(describe(concurrency=options.get("concurrency", 100), rate_limit=options.get("rate_limit"),
+    concurrency = options.get("concurrency", 100)
+    if concurrency == "auto":
+        concurrency = f"auto (max {options.get('max_concurrency', 500)})"
+    run.start(describe(concurrency=concurrency, rate_limit=options.get("rate_limit"),
                        retries=options.get("retries"), retry_rounds=retry_rounds, output=target,
                        skipped=len(done) if resume else 0))  # fmt: skip
     try:

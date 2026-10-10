@@ -134,9 +134,42 @@ def make_app() -> web.Application:
             {"host": request.host, "port": request.transport.get_extra_info("sockname")[1]}
         )
 
+    active: collections.Counter = collections.Counter()
+    peak: collections.Counter = collections.Counter()
+
+    async def capacity(request: web.Request) -> web.Response:
+        """Serves `max` requests at a time per `key`; more at once get a 503, like an overloaded API."""
+        key = request.query["key"]
+        if active[key] >= int(request.query["max"]):
+            return web.Response(status=503, text="busy")
+        active[key] += 1
+        peak[key] = max(peak[key], active[key])
+        try:
+            await asyncio.sleep(float(request.query.get("delay", "0.03")))
+        finally:
+            active[key] -= 1
+        return web.Response(text="ok")
+
+    async def congested(request: web.Request) -> web.Response:
+        """Never fails, but each request in flight adds `per` seconds to every response."""
+        key = request.query["key"]
+        active[key] += 1
+        peak[key] = max(peak[key], active[key])
+        try:
+            await asyncio.sleep(0.01 + float(request.query.get("per", "0.01")) * active[key])
+        finally:
+            active[key] -= 1
+        return web.Response(text="ok")
+
+    async def peaks(request: web.Request) -> web.Response:
+        return web.json_response(dict(peak))
+
     app = web.Application()
     app.add_routes(
         [
+            web.get("/capacity", capacity),
+            web.get("/congested", congested),
+            web.get("/peaks", peaks),
             web.get("/pages/next", pages_next),
             web.get("/pages/link", pages_link),
             web.get("/pages/cursor", pages_cursor),

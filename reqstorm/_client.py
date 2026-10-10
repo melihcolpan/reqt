@@ -7,6 +7,7 @@ import base64
 import collections
 import itertools
 import json as jsonlib
+import logging
 import random
 import ssl as ssllib
 import time
@@ -33,8 +34,10 @@ import aiohttp
 from multidict import CIMultiDict, CIMultiDictProxy
 
 from ._adaptive import AdaptiveRateLimiter
+from ._concurrency import AutoConcurrency
 from ._limits import HostRateLimiter, RateLimit, host_key
 from ._observe import LogLevel, LogTarget, ProgressTarget, Run, describe
+from ._resources import fit_concurrency
 from ._socks import SocksSessions, check_available, is_proxy_error, is_socks
 
 __all__ = ["Attempt", "HTTPStatusError", "Request", "Result", "Results", "fetch_all", "stream"]
@@ -251,6 +254,7 @@ class _Options:
     max_backoff: float = 30.0
     jitter: bool = True
     run: Optional[Run] = None
+    gate: Optional[AutoConcurrency] = None
 
     def backoff_delay(self, retry: int) -> float:
         """Seconds to wait before retry number ``retry`` (1 for the first)."""
@@ -284,7 +288,10 @@ def _resolve(request: Union[str, Request], options: _Options) -> Request:
 def _is_retryable_error(error: BaseException) -> bool:
     if isinstance(error, (aiohttp.InvalidURL, ValueError)):
         return False
-    return isinstance(error, (aiohttp.ClientError, asyncio.TimeoutError)) or is_proxy_error(error)
+    # asyncio.TimeoutError and the built-in TimeoutError are different classes before Python 3.11
+    return isinstance(error, (aiohttp.ClientError, asyncio.TimeoutError, TimeoutError)) or is_proxy_error(
+        error
+    )
 
 
 def _should_retry(result: Result, retry_statuses: frozenset) -> bool:
@@ -301,6 +308,23 @@ def _retry_after(headers: Mapping[str, str]) -> Optional[float]:
         return min(max(float(value), 0.0), _MAX_RETRY_AFTER)
     except ValueError:
         return None
+
+
+async def _ungate(
+    options: _Options,
+    url: str,
+    status: Optional[int],
+    error: Optional[BaseException],
+    took: float,
+    epoch: int,
+) -> None:
+    """Give back an attempt's place in the concurrency="auto" limit and learn from it."""
+    gate = options.gate
+    assert gate is not None
+    await gate.release()
+    change = gate.attempt(url, status, error, took, epoch)
+    if change is not None and options.run is not None:
+        options.run.log(logging.DEBUG, "%s", change, event="concurrency", concurrency=gate.limit)
 
 
 MAX_THROTTLED_RETRIES = 10  # with rate_limit="auto": 429 retries, not counted in `retries`
@@ -334,6 +358,8 @@ async def _send(session: aiohttp.ClientSession, request: Request, index: int, op
         delay = 0.0
         attempt_started = time.monotonic()
         used_proxy: Optional[str] = None
+        gated = False
+        epoch = 0
         try:
             headers: Dict[str, str] = dict(request.headers or {})
             generation = None
@@ -345,6 +371,9 @@ async def _send(session: aiohttp.ClientSession, request: Request, index: int, op
                     headers.setdefault(name, value)
             if limiter is not None:
                 await limiter.wait(request.url)
+            if options.gate is not None:
+                epoch = await options.gate.acquire()
+                gated = True
             attempt_started = time.monotonic()
             proxy = used_proxy = request.proxy or options.next_proxy()
             sender = session
@@ -366,6 +395,9 @@ async def _send(session: aiohttp.ClientSession, request: Request, index: int, op
                 body = await response.read()
                 status, response_headers, final_url = response.status, response.headers, str(response.url)
             took = time.monotonic() - attempt_started
+            if gated:
+                gated = False
+                await _ungate(options, request.url, status, None, took, epoch)
             result.history.append(Attempt(attempt, status, None, took))
             if run is not None:
                 run.attempted(request, status, None, took, attempt, used_proxy)
@@ -400,11 +432,16 @@ async def _send(session: aiohttp.ClientSession, request: Request, index: int, op
             if run is not None:
                 run.retrying(request, f"HTTP {status}", attempt, options.retries + 1, delay, used_proxy)
         except asyncio.CancelledError:
+            if gated and options.gate is not None:
+                await options.gate.release()
             raise
         except Exception as error:  # one failing request must not stop the others
             result.error = error
             result.status = None
             took = time.monotonic() - attempt_started
+            if gated:
+                gated = False
+                await _ungate(options, request.url, None, error, took, epoch)
             result.history.append(Attempt(attempt, None, error, took))
             if run is not None:
                 run.attempted(request, None, error, took, attempt, used_proxy)
@@ -431,7 +468,8 @@ async def stream(
     params: Optional[Mapping[str, Any]] = None,
     json: Any = None,
     data: Any = None,
-    concurrency: int = 100,
+    concurrency: Union[int, str] = 100,
+    max_concurrency: int = 500,
     timeout: Optional[float] = 30.0,
     retries: int = 0,
     backoff: float = 0.5,
@@ -464,8 +502,11 @@ async def stream(
     owns_run = _run is None
     run = _run or Run(total=_total(urls, total, paginate), progress=progress, log_level=log_level,
                       log_file=log_file, log_format=log_format)  # fmt: skip
-    if concurrency < 1:
-        raise ValueError("concurrency must be at least 1")
+    auto = concurrency == "auto"
+    if not auto and (not isinstance(concurrency, int) or isinstance(concurrency, bool) or concurrency < 1):
+        raise ValueError('concurrency must be a number of at least 1, or "auto"')
+    if max_concurrency < 1:
+        raise ValueError("max_concurrency must be at least 1")
     if retries < 0:
         raise ValueError("retries must not be negative")
     if concurrency_per_host < 0:
@@ -479,6 +520,15 @@ async def stream(
     else:
         limiter = None
     proxies = [proxy] if isinstance(proxy, str) else list(proxy or [])
+    # Each SOCKS proxy has its own connection pool, which may hold as many connections
+    pools = 1 + len({item for item in proxies if is_socks(item)})
+
+    def file_limit(level: int, message: str) -> None:
+        run.log(level, "%s", message, event="file_limit")
+
+    workers = fit_concurrency(max_concurrency if auto else int(concurrency), pools, file_limit)
+    controller = AutoConcurrency(maximum=workers) if auto else None
+    run.controller = controller
     if any(is_socks(item) for item in proxies):
         check_available()  # fail before sending anything, not on every request
         if session is not None:
@@ -500,22 +550,24 @@ async def stream(
         auth=auth,
         cache=cache,
         proxies=itertools.cycle(proxies) if proxies else None,
-        socks=SocksSessions(concurrency, concurrency_per_host) if session is None else None,
+        socks=SocksSessions(workers, concurrency_per_host) if session is None else None,
         run=run,
+        gate=controller,
     )
     if limiter is not None:
         run.limiters.append(limiter)
     if owns_run:
-        run.start(describe(concurrency=concurrency, rate_limit=rate_limit, retries=retries))
+        shown = f"auto (max {workers})" if auto else workers
+        run.start(describe(concurrency=shown, rate_limit=rate_limit, retries=retries))
 
     owns_session = session is None
     if session is None:
         session = aiohttp.ClientSession(
-            connector=aiohttp.TCPConnector(limit=concurrency, limit_per_host=concurrency_per_host)
+            connector=aiohttp.TCPConnector(limit=workers, limit_per_host=concurrency_per_host)
         )
 
     pending = enumerate(urls)
-    queue: asyncio.Queue = asyncio.Queue(maxsize=concurrency * 2)
+    queue: asyncio.Queue = asyncio.Queue(maxsize=workers * 2)
     finished = object()
     # Pages found while paginating are sent before new input, so a long input does not
     # leave pages waiting. Workers stop when the input is used up and nothing is in flight.
@@ -574,7 +626,7 @@ async def stream(
 
     async def supervise() -> None:
         try:
-            await asyncio.gather(*(worker() for _ in range(concurrency)))
+            await asyncio.gather(*(worker() for _ in range(workers)))
         except BaseException as error:  # surfaces a failure while reading `urls`
             await queue.put(error)
         else:
@@ -666,7 +718,8 @@ async def fetch_all(
     params: Optional[Mapping[str, Any]] = ...,
     json: Any = ...,
     data: Any = ...,
-    concurrency: int = ...,
+    concurrency: Union[int, str] = ...,
+    max_concurrency: int = ...,
     timeout: Optional[float] = ...,
     retries: int = ...,
     backoff: float = ...,
@@ -713,7 +766,8 @@ async def fetch_all(
     params: Optional[Mapping[str, Any]] = None,
     json: Any = None,
     data: Any = None,
-    concurrency: int = 100,
+    concurrency: Union[int, str] = 100,
+    max_concurrency: int = 500,
     timeout: Optional[float] = 30.0,
     retries: int = 0,
     backoff: float = 0.5,
@@ -748,7 +802,15 @@ async def fetch_all(
         params: Query parameters for every request, unless a ``Request`` sets its own.
         json: JSON body for every request, unless a ``Request`` sets its own.
         data: Form or raw body for every request, unless a ``Request`` sets its own.
-        concurrency: Maximum number of requests in flight at once.
+        concurrency: Maximum number of requests in flight at once, or ``"auto"`` to find
+            the best number from the responses: it starts at 8, doubles while responses
+            stay healthy, and backs off when servers answer 429/5xx, time out, drop
+            connections or slow down to more than twice their normal response time.
+            When the number is higher than the open file limit allows (one file per
+            connection), the limit is raised if the system permits, else the number is
+            lowered with a warning.
+        max_concurrency: With ``concurrency="auto"``, the highest number it may reach
+            (default 500).
         timeout: Seconds allowed per attempt, including reading the body. ``None`` disables it.
         retries: How many times to retry a request right away after a connection error,
             a timeout or a status in ``retry_statuses``. Invalid URLs are not retried.
@@ -820,6 +882,7 @@ async def fetch_all(
         json=json,
         data=data,
         concurrency=concurrency,
+        max_concurrency=max_concurrency,
         timeout=timeout,
         retries=retries,
         backoff=backoff,
@@ -837,7 +900,8 @@ async def fetch_all(
         session=session,
         _run=run,
     )
-    run.start(describe(concurrency=concurrency, rate_limit=rate_limit, retries=retries,
+    shown = f"auto (max {max_concurrency})" if concurrency == "auto" else concurrency
+    run.start(describe(concurrency=shown, rate_limit=rate_limit, retries=retries,
                        retry_rounds=retry_rounds))  # fmt: skip
     try:
         async for result in _execute(urls, retry_rounds, retry_round_delay, stream_options):
