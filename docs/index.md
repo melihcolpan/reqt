@@ -47,7 +47,7 @@ print(results.summary())
 
     ---
 
-    `"10/s"`, `"100/min"`, `"1000/h"` per host, or `"auto"` to follow the server's 429s and rate-limit headers. Know how long a batch takes before you start it.
+    `"10/s"`, `"100/min"`, `"1000/h"` per host, or `"auto"` to follow the server's 429s and rate-limit headers. `concurrency="auto"` finds how many requests at once a server handles well. Know how long a batch takes before you start it.
 
     [:octicons-arrow-right-24: Rate limits](guide/limits.md)
 

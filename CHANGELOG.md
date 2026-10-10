@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.5.0
+
+### Added
+- **`concurrency="auto"`** finds how many requests at once the servers handle well, like TCP congestion control: it starts at 8 attempts on the wire, doubles while responses stay healthy, backs off to three quarters as soon as the servers push back (429/502/503/504, timeouts, dropped connections on more than 5 % of recent attempts) and to nine tenths when responses take twice as long as the host's normal, then stops just below the level that caused pushback and probes it again only after a few healthy windows. It grows only when the whole limit is in use, and a request waiting to retry does not hold a place. `max_concurrency` (default 500) caps it. Against a local server that rejects anything over 12 at a time, it settled at 12 with 1 % extra attempts, where `concurrency=100` needed 46 % more; against one that slows down under load, it kept 9 requests in flight instead of 100.
+- The progress line shows `active 12/16` (in flight / allowed) with `concurrency="auto"`; every change is logged at `DEBUG` and a summary at `INFO`. `ProgressInfo.concurrency` holds the current limit.
+- **Open file limit:** before sending, the concurrency is checked against the process's open file limit (`ulimit -n`; one file per connection, plus one pool per SOCKS proxy). A limit that is too low is raised as far as the system allows; if that is not enough, the concurrency is lowered to fit, with a warning naming the `ulimit -n` value to use. This replaces "Too many open files" failures, for example with `concurrency=1000` in a shell limited to 256. Not applicable on Windows.
+- Command line: `-c auto`, `--max-concurrency`.
+
+### Fixed
+- On Python 3.9 and 3.10, the built-in `TimeoutError` (raised for example by SOCKS proxies) was not treated as retryable, because it differs from `asyncio.TimeoutError` before Python 3.11.
+
 ## 2.4.3
 
 ### Fixed

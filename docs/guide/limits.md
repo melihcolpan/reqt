@@ -43,6 +43,46 @@ Pauses are capped at 5 minutes. `concurrency` and `concurrency_per_host` still a
 
 `concurrency` caps how many requests are in flight at once (default 100). `concurrency_per_host` caps it per host (default: no per-host cap). Requests are spread over a fixed number of workers that read your URLs lazily, so a generator of millions of URLs is fine.
 
+Concurrency is not tied to the number of CPU cores. reqstorm runs every request on one thread with asyncio, and a request spends almost all its time waiting for the network, so one core easily keeps hundreds of requests in flight. What limits a batch is the server, and on your side the number of open connections, both covered below.
+
+### Finding the concurrency automatically: `concurrency="auto"`
+
+When you don't know how much a server can take, let reqstorm find out:
+
+```python
+results = reqstorm.fetch_all_sync(urls, concurrency="auto", retries=3)
+```
+
+It works like TCP congestion control:
+
+- It starts with 8 attempts on the wire and **doubles** that after each healthy window of time (about three times the response time, at least a quarter of a second).
+- It **backs off** to three quarters as soon as the servers push back: 429, 502, 503 or 504 responses, timeouts or dropped connections on more than 5 % of recent attempts. It **eases off** to nine tenths when responses take more than twice as long as that host's normal.
+- After the first backoff it grows by about 10 % per window, stops just below the level where the servers pushed back, and tries that level again only after a few healthy windows.
+- It grows only when the whole limit is in use, and a request waiting to retry does not hold a place, so the limit is what the servers actually see.
+
+`max_concurrency` (default 500) is the highest it may go. With `progress=True` the line shows the current limit as `active 12/16` (in flight / allowed), and the log reports every change at `DEBUG` and a summary at `INFO`.
+
+How it compares with the default `concurrency=100`, measured against a local server that rejects with a 503 anything over its capacity (600 requests, `retries=3`):
+
+| Server capacity | `concurrency=100` | `concurrency="auto"` |
+|---|---|---|
+| 3 at a time | 494 of 600 succeed, 105 % extra attempts | 600 succeed, 2 % extra; settles at 3 |
+| 12 at a time | 600 succeed, 46 % extra | 600 succeed, 1 % extra, faster; settles at 12 |
+| 40 at a time | 600 succeed, 20 % extra | 600 succeed, 6 % extra; settles at 39 |
+| 100 at a time | 600 succeed, 0.2 s | 600 succeed, 1.0 s (it starts at 8 and needs time to grow) |
+| never rejects, slows down under load | 100 requests at once | at most 9 at once |
+
+So `"auto"` is gentle with servers that are already busy and close to ideal for unknown capacity. For a short batch against a server that easily handles your fixed number, a fixed number is faster, because `"auto"` spends the first second or so finding out. It treats the batch as a whole; to limit one busy host among several, combine it with `concurrency_per_host`.
+
+### Open file limit
+
+Every connection is an open file, and the operating system limits how many a process may have (`ulimit -n`; some macOS shells start at 256). Asking for more connections than that used to fail with "Too many open files". Now, before sending anything, reqstorm compares the concurrency with the limit:
+
+- If the limit is too low, it is raised as far as the system allows, and an `INFO` message says so.
+- If it cannot be raised far enough, the concurrency is lowered to fit, with a `WARNING` that names the `ulimit -n` value to use for the full concurrency.
+
+64 file descriptors are kept free for log and output files, and each SOCKS proxy (which has its own connection pool) counts separately. Windows has no such limit, so nothing changes there.
+
 ## Estimating a batch
 
 `reqstorm.estimate` tells you how long a batch should take and which setting is the bottleneck, without sending anything:
