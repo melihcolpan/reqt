@@ -82,7 +82,7 @@ reqstorm does all of that for you, with one call.
 |---|---|
 | One result per request | Failures are recorded, never raised; every attempt is kept |
 | Rate limits | Per host, in any unit (`"100/min"`), or `"auto"` from the server's 429s and headers |
-| Concurrency | Overall and per host |
+| Concurrency | Overall and per host, or `"auto"` to find it from the responses |
 | Retries | Exponential backoff with a cap and jitter, `Retry-After`; plus end-of-run rounds |
 | Reports | Failures by reason, p50/p95/p99 response times, per-host figures |
 | Pagination | Next links, `Link` headers, cursors and page numbers |
@@ -263,6 +263,10 @@ results = reqstorm.fetch_all_sync(
 | `(100, 60)` | 100 every 60 seconds |
 
 The limit applies to each host (`host:port`) separately and counts retries too, so requests to different APIs never slow each other down. Requests to one host are spaced evenly.
+
+**Don't know how much the server can take?** `concurrency="auto"` finds out, like TCP congestion control: it starts at 8 requests at once, doubles while responses stay healthy, and backs off on 429/5xx, timeouts or slowdowns. Against a server that rejects anything over 12 at a time it settles at 12 with 1 % extra attempts, where a fixed 100 needs 46 % more.
+
+Concurrency does not depend on CPU cores: requests mostly wait for the network, and one core keeps hundreds in flight. If the concurrency needs more open connections than `ulimit -n` allows, the limit is raised automatically, or the concurrency is lowered with a warning.
 
 **Don't know the limit?** `rate_limit="auto"` learns it from the server. A `429 Too Many Requests` pauses the host for `Retry-After` and slows it down; `X-RateLimit-Remaining` and `X-RateLimit-Reset` spread the remaining requests over the window; the rate recovers when the server stops pushing back. 429 responses are retried without using up `retries`.
 

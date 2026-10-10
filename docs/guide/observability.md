@@ -16,7 +16,7 @@ reqstorm: 3500/7000 (50%)  ok 3493  failed 7  active 12  retries 41  1.7 req/s  
 |---|---|
 | `3500/7000 (50%)` | Requests with a final result, of all requests |
 | `ok`, `failed` | How those ended |
-| `active` | Requests being sent, waiting for a response, or waiting to retry right now |
+| `active` | Requests being sent, waiting for a response, or waiting to retry right now. With `concurrency="auto"`, shown as `active 12/16`: in flight / currently allowed |
 | `retries` | Retries so far, of all requests |
 | `1.7 req/s` | Finished requests per second over the last minute |
 | `round 1/2` | With `retry_rounds`: the round being sent |
