@@ -83,8 +83,10 @@ def _parser() -> argparse.ArgumentParser:
     add = pace.add_argument
     add("--rate", metavar="LIMIT",
         help="per-host rate limit: 5, 10/s, 100/min, 1000/h, or auto (default: none)")
-    add("-c", "--concurrency", type=int, default=100, metavar="N",
-        help="requests in flight at once (default: 100)")
+    add("-c", "--concurrency", type=_concurrency, default=100, metavar="N",
+        help="requests in flight at once, or auto to find the number from the responses (default: 100)")
+    add("--max-concurrency", type=int, default=500, metavar="N",
+        help="with -c auto: the highest number it may reach (default: 500)")
     add("--per-host", type=int, default=0, metavar="N",
         help="requests in flight per host (default: no limit)")
     add("--timeout", type=float, default=30.0, metavar="SECONDS",
@@ -155,6 +157,15 @@ def _parser() -> argparse.ArgumentParser:
         help="typical response time assumed by --estimate (default: 0.5)")
     return parser
 # fmt: on
+
+
+def _concurrency(text: str) -> Union[int, str]:
+    if text == "auto":
+        return text
+    try:
+        return int(text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"invalid concurrency {text!r}; use a number or auto") from None
 
 
 def _paginator(text: Optional[str], max_pages: int) -> Optional[Paginator]:
@@ -291,7 +302,9 @@ def _batch(args: argparse.Namespace, cache: Optional[Cache]) -> int:
         if total is None:
             raise ValueError("--estimate needs an input file, not standard input")
         print(estimate(total, rate_limit=None if rate == "auto" else rate, hosts=_hosts(args),
-                       concurrency=args.concurrency, concurrency_per_host=args.per_host,
+                       # with -c auto, the best case: the highest concurrency it may reach
+                       concurrency=args.max_concurrency if args.concurrency == "auto" else args.concurrency,
+                       concurrency_per_host=args.per_host,
                        latency=args.latency))  # fmt: skip
         return 0
 
@@ -308,6 +321,7 @@ def _batch(args: argparse.Namespace, cache: Optional[Cache]) -> int:
         json=json.loads(args.json) if args.json else None,
         data=args.data,
         concurrency=args.concurrency,
+        max_concurrency=args.max_concurrency,
         concurrency_per_host=args.per_host,
         timeout=args.timeout,
         retries=args.retries,
